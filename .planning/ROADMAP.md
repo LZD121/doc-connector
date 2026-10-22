@@ -3,9 +3,20 @@
 ## Milestones
 
 - ✅ **v1.0 doc-connector** — Phases 1–5 (shipped 2026-10-22)
-- 🚧 **v2.0 可观测、本地控制、分发与聚合** — Phases 6–10 (planned)
+- ✅ **v2.0 可观测、本地控制、分发与聚合** — Phases 6–10 (shipped 2026-10-23)
 
 ## Phases
+
+<details>
+<summary>✅ v2.0 可观测、本地控制、分发与聚合 (Phases 6–10) — SHIPPED 2026-10-23</summary>
+
+**Delivered:** JSON output contract for `status`/`push`/`pull`, read-only `doctor`, full error-hint coverage, `.docignore`, multi-directory mapping with the v1.0 layout preserved, opt-in symlinks, a worktree-aware `diff`, cross-repository `status`/`sync --root` with project locks on the write path, Homebrew cask + Scoop manifests, shell completion for bash/zsh/fish, and a `tui` conflict-triage screen. 5 phases, 21 plans, 12 requirements.
+
+Full roadmap: `.planning/milestones/v2.0-ROADMAP.md`
+Requirements: `.planning/milestones/v2.0-REQUIREMENTS.md`
+Audit: `.planning/milestones/v2.0-MILESTONE-AUDIT.md` (includes the winget/licence deferral and three debts)
+
+</details>
 
 <details>
 <summary>✅ v1.0 doc-connector (Phases 1–5) — SHIPPED 2026-10-22</summary>
@@ -18,125 +29,10 @@ Audit: `.planning/milestones/v1.0-MILESTONE-AUDIT.md`
 
 </details>
 
-### 🚧 v2.0 可观测、本地控制、分发与聚合 (Planned)
+## Next Milestone
 
-**Milestone Goal:** 让 v1.0 已可靠的核心循环变得可脚本化、可自我诊断、可跨仓库驱动，并补齐安装渠道。**不新增任何同步语义**——所有 phase 都在既有 `internal/app` 分类器之上叠加输出、路径与调度层。
-
-Requirements: `.planning/REQUIREMENTS.md` (12 requirements)
-
-#### Phase 6: 可观测性与诊断
-
-**Goal**: 机器可读的结果契约 + 一次性自我诊断，让脚本与用户都不再依赖人读文本
-**Depends on**: Phase 5 (v1.0 shipped)
-**Requirements**: OBS-01, OBS-02, OBS-03
-**Success Criteria** (what must be TRUE):
-  1. `status --json`、`push --json`、`pull --json` 各自向 stdout 输出**单个** JSON 对象，含 `schema_version`/`command`/`ok`，可直接 `jq .schema_version` 取值
-  2. 命令失败时 stdout 仍是单个 JSON 对象（`error.code`/`message`/`hint`），退出码与 v1.0 闭集一致，且 stdout 不含 ANSI 转义
-  3. `doctor` 在干净仓库全绿；手改 `.git/info/exclude` 的 managed 块后能指出具体问题与来源文件
-  4. `doctor` 能报出当前锁持有者的 PID 与命令，以及遗留临时/冲突产物路径
-  5. 每个错误码路径的 `hint` 都有测试断言（不只"大多数有 hint"）
-
-**Plans**: 5/5 plans complete
-
-Plans:
-- [x] 06-01: JSON 输出骨架（单一 renderer、schema_version、错误对象、ANSI 抑制）
-- [x] 06-02: status / push / pull 三命令 JSON 载荷与字段稳定性测试
-- [x] 06-03: doctor 检查项（git 版本、exclude 来源与生效性、tracked、远端可达、锁持有者、base 一致性、遗留产物）
-- [x] 06-04: doctor 人类可读报告与退出码映射
-- [x] 06-05: hint 全覆盖审计与断言（含 `--json` 的 `error.hint`）
-
-#### Phase 7: 本地控制与历史视图
-
-**Goal**: 用户可以按本地需要收窄同步面（忽略、链接），并把一个项目映射到多个文档目录；同时能查看历史版本差异
-**Depends on**: Phase 6（JSON 渲染层被 `diff --json` 复用）
-**Requirements**: LOCL-01, LOCL-02, LOCL-03, LOCL-04
-**Success Criteria** (what must be TRUE):
-  1. 在文档根放置 `.docignore` 后，该文件本身与被忽略的路径都不出现在 `status`、不进入 `push`；basename 与目录前缀两种写法均生效
-  2. 默认仍拒绝符号链接且报出全部违规项；显式开启后，指向文档根之外的目标被拒绝，根内链接触发同步
-  3. 旧单目录 config 自动迁移为目录列表，迁移后 `status`/`push`/`pull` 的输出与迁移前逐字节一致；无需手工编辑
-  4. 多目录项目下 `push` 只影响本项目的各前缀，`restore` 能按任一目录定位文件
-  5. `diff <commit> [path]` 在不触网的情况下输出该版本与工作区的差异；无 pager 环境与 `--json` 下都有确定输出
-
-**Plans**: 6 plans
-
-Plans:
-- [ ] 07-01: `.docignore` 解析（basename + 目录前缀）并与内置列表合流，接入 status/push/pull
-- [ ] 07-02: 符号链接显式开启 + 根内解析校验 + 拒绝清单
-- [ ] 07-03: config schema v2（目录列表）与单目录自动迁移
-- [ ] 07-04: 多目录映射接入 status/push/pull/restore/log
-- [ ] 07-05: `diff` 命令（镜像只读、路径过滤、pager 尊重）
-- [ ] 07-06: `diff --json` 与历史版本选择（`--from`）
-
-#### Phase 8: 跨仓库聚合
-
-**Goal**: 一次看到并驱动多个仓库，同时不引入全局状态、不自动解决冲突
-**Depends on**: Phase 7（每仓渲染复用 status 输出；多目录影响 docs 定位）
-**Requirements**: WORK-01, WORK-02
-**Success Criteria** (what must be TRUE):
-  1. `status --root <dir>` 在同一屏列出根目录下深度 ≤2 的全部已初始化仓库及其 state/ahead/behind/冲突数；无 config 的仓库只计入跳过计数
-  2. 存在 diverged 仓库时 `sync --root` 把它标为 `blocked` 并继续后续仓库，绝不写冲突副本、绝不 resolve，退出码 1
-  3. 单仓网络失败被记录为 `failed` 且不影响其余仓库，退出码 4；被另一进程持锁的仓库报 `locked`，与 `failed` 分列
-  4. `sync --root --dry-run` 不写任何文件、不推进任何 base
-  5. 批量中同一私有远端的多仓按顺序执行且每仓重新 fetch（测试断言无并发）
-
-**Plans**: 4 plans
-
-Plans:
-- [ ] 08-01: 仓库发现（深度 ≤2、config 探测、跳过计数、错误隔离）
-- [ ] 08-02: `status --root` 汇总渲染、最坏退出码、`--json` 数组载荷
-- [ ] 08-03: `sync --root` 串行调度（clean/behind/ahead/blocked/failed/locked）
-- [ ] 08-04: `sync --dry-run` 与并发禁令的回归测试
-
-#### Phase 9: 分发与补全
-
-**Goal**: 安装与使用不再依赖手工解压与记忆标志
-**Depends on**: Phase 6（`--help` 与输出契约稳定，补全才值得生成）
-**Requirements**: DIST-01, DIST-02
-**Success Criteria** (what must be TRUE):
-  1. 打 tag 后 `LZD121/homebrew-tap` 出现 cask，`brew install --cask doc-connector` 可装且版本与 release 一致
-  2. `HOMEBREW_TAP_GITHUB_TOKEN` 缺失时发布仍为绿色，cask 只生成到 `dist/`
-  3. Scoop bucket 清单可被 `scoop install` 使用；winget 清单在 `dist/` 中生成
-  4. `doc-connector completion bash|zsh|fish` 输出可直接 source 的脚本，覆盖六个子命令与 v1.0+v2.0 全部标志
-
-**Plans**: 3 plans
-
-Plans:
-- [ ] 09-01: cask 上传解阻（PAT secret、条件发布、校验和引用）
-- [ ] 09-02: Scoop bucket 与 winget 清单
-- [ ] 09-03: shell completion（bash/zsh/fish）与生成测试
-
-#### Phase 10: TUI 汇总屏
-
-**Goal**: 把跨仓一览与冲突分诊变成一屏交互，且不产生第二套判定逻辑
-**Depends on**: Phase 8（汇总数据源）、Phase 7（diff/冲突两侧内容）
-**Requirements**: WORK-03
-**Success Criteria** (what must be TRUE):
-  1. `tui` 在非 TTY（管道/CI）下拒绝启动并提示改用 `status --root`；TTY 下显示跨仓汇总
-  2. 选中某仓库的冲突文件后，可选"保留本地"或"采纳远端"，操作完成后该路径冲突计数归零、产物按 v1.0 规则清理
-  3. TUI 执行的每个动作与等价 CLI 命令产生的提交、副本文件名、退出码一致（一致性测试）
-  4. TUI 层不含任何 git 调用（静态断言 + 代码审查），全部经由 `internal/app`
-
-**Plans**: 3 plans
-
-Plans:
-- [ ] 10-01: TUI 骨架（TTY 检测、跨仓汇总屏、只读）
-- [ ] 10-02: 冲突分诊交互（选仓 → 选文件 → local/remote → 调用 app）
-- [ ] 10-03: 与 CLI 行为一致性测试 + 非 TTY 回退
-
-## Progress
-
-**Execution Order:** 6 → 7 → 8 → 9 → 10
-
-The table tracks the current milestone only, so the completion percentage means
-"v2.0 progress". Shipped v1.0 phases are listed in the collapsed block above.
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 6. 可观测性与诊断 | v2.0 | 5/5 | Complete | 2026-10-22 |
-| 7. 本地控制与历史视图 | v2.0 | 0/6 | Not started | - |
-| 8. 跨仓库聚合 | v2.0 | 0/4 | Not started | - |
-| 9. 分发与补全 | v2.0 | 0/3 | Not started | - |
-| 10. TUI 汇总屏 | v2.0 | 0/3 | Not started | - |
+Not started. Run `/gsd-new-milestone` to scope the next cycle; candidate work is listed in
+`.planning/milestones/v2.0-MILESTONE-AUDIT.md` under Tech Debt / Deferred.
 
 ---
-*Roadmap created: 2026-10-22 after milestone v2.0 initialization*
+*Roadmap updated: 2026-10-23 after v2.0 milestone close*

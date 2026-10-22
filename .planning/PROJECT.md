@@ -10,17 +10,12 @@
 
 让私有文档在多台机器间**可验证地**同步，同时保证主仓库的历史与工作区永远不含它们。任何取舍都优先保证“不丢改动”和“不误入主仓库”。
 
-## Current Milestone: v2.0 可观测、本地控制、分发与聚合
+## Next Milestone
 
-**Goal:** 让 v1.0 已经可靠的核心循环变得可脚本化、可自我诊断、可跨仓库驱动，并补齐安装渠道。
-
-**Target features:**
-- 可观测性：`--json` 稳定 schema、`doctor` 诊断、全覆盖可执行 hint
-- 本地控制：`.docignore`、多文档目录映射、可选符号链接、`diff` 历史视图
-- 跨仓库聚合：`status --root` 汇总、`sync --root` 串行批量、`tui` 冲突分诊
-- 分发：Homebrew cask / Scoop / winget 清单、shell completion
-
-Scope lives in `.planning/REQUIREMENTS.md` (12 requirements, phases 6–10).
+Not started. v2.0 shipped 2026-10-23 (phases 6-10, 12 requirements). Deferred themes
+are recorded in `.planning/milestones/v2.0-MILESTONE-AUDIT.md` (winget licence, signing,
+field validation) and in `REQUIREMENTS.md` Future entries of the archive; run
+`/gsd-new-milestone` to scope the next cycle.
 
 ## Requirements
 
@@ -41,7 +36,7 @@ v1.0 shipped 2026-10-22 — all 49 requirements complete. See `.planning/milesto
 
 ### Active
 
-Milestone v2.0 — 12 requirements across OBS / LOCL / WORK / DIST. See `.planning/REQUIREMENTS.md` for the committed list and `.planning/ROADMAP.md` for phase mapping.
+None — v2.0 is complete. See `.planning/milestones/v2.0-REQUIREMENTS.md` for what shipped.
 
 ### Out of Scope
 
@@ -92,15 +87,15 @@ Milestone v2.0 — 12 requirements across OBS / LOCL / WORK / DIST. See `.planni
 | 裸镜像 `.git/doc-connector/store.git` + plumbing | 文档只有一份，避免第二工作树与工作区漂移；`log`/`restore` 直接读镜像 | — Validated in v1.0 |
 | 手动 CLI（init/push/pull/status/log/restore） | 用户明确不要后台 watch/hook；同步时机完全可控 | — Validated in v1.0 |
 | 内置垃圾文件忽略列表 | 避免 `.DS_Store` 等系统文件污染私有仓库 | — Validated in v1.0 |
-| workspace 只由 `--root <dir>` 参数确定（深度≤2 发现已初始化仓库），不引入全局配置文件 | 保持“工具的全部状态都在仓库内”，避免陈旧条目与仓库搬迁两类故障 | — Decided 2026-10-22 |
-| `sync --root` 逐仓串行、每仓重新 fetch；diverged 或有冲突→`blocked` 跳过；退出码取最坏值 | 共享私有远端连续推进分支会撞 lease 重试上限；批量绝不自动 resolve | — Decided 2026-10-22 |
-| TUI 只做跨仓汇总屏 + 冲突分诊，全部复用 `internal/app`，TUI 层零 git 调用 | 两份 UI 各自调 git 会让 TUI 判定与 `status` 分叉，违反“一个分类器是正确性核心” | — Decided 2026-10-22 |
-| GUI 客户端不做 | 破坏单静态二进制；macOS 未签名导致下载即 Gatekeeper 拦截；需求本质是减少 cd，键盘更合适 | — Decided 2026-10-22 |
-| DIST-03（自动建远端）暂缓到 v2 之后 | 需 provider token、组织策略与可见性决策，`research/FEATURES.md` 列为 anti-feature | — Decided 2026-10-22 |
+| workspace 只由 `--root <dir>` 参数确定（深度≤2 发现已初始化仓库），不引入全局配置文件 | 保持“工具的全部状态都在仓库内”，避免陈旧条目与仓库搬迁两类故障 | — Validated in v2.0 |
+| `sync --root` 逐仓串行、每仓重新 fetch；diverged 或有冲突→`blocked` 跳过；退出码取最坏值 | 共享私有远端连续推进分支会撞 lease 重试上限；批量绝不自动 resolve | — Validated in v2.0 |
+| TUI 只做跨仓汇总屏 + 冲突分诊，全部复用 `internal/app`，TUI 层零 git 调用 | 两份 UI 各自调 git 会让 TUI 判定与 `status` 分叉，违反“一个分类器是正确性核心” | — Validated in v2.0 |
+| GUI 客户端不做 | 破坏单静态二进制；macOS 未签名导致下载即 Gatekeeper 拦截；需求本质是减少 cd，键盘更合适 | — Held in v2.0 |
+| DIST-03（自动建远端）暂缓到 v2 之后 | 需 provider token、组织策略与可见性决策，`research/FEATURES.md` 列为 anti-feature | — Held in v2.0 |
 
 ## Current State
 
-**v2.0 opened (2026-10-22).** v1.0 shipped the same day: 6 static targets, CI matrix green on 3 OS × Go 1.26/1.27, release published with six archives and checksums. The binary was exercised end-to-end on Linux against local `file://` bare remotes (init → push → second-machine init → pull → push → pull → clean status, plus conflicts, resolve, restore and offline log). Not yet exercised against a real provider private repository or a second physical machine — that field validation gates the value of v2's surfaces.
+**v2.0 shipped (2026-10-23).** 151 tests across 13 packages, `go vet` clean, `golangci-lint` 0 issues, `goreleaser check` valid, snapshot produces six archives plus cask and Scoop manifests. The CLI now has ten subcommands (`init`, `status`, `push`, `pull`, `log`, `restore`, `doctor`, `diff`, `sync`, `tui`, plus `completion`). Still not exercised against a real provider private repository or a second physical machine — that field validation remains the highest-value next step.
 
 ## Evolution
 
@@ -120,4 +115,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-22 after milestone v2.0 initialization*
+*Last updated: 2026-10-23 after v2.0 milestone close*
