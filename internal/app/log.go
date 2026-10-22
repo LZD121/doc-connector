@@ -58,10 +58,14 @@ func Log(ctx context.Context, env Env, opts LogOptions) (*LogResult, error) {
 	format := "%H%x00%aI%x00%an%x00%s%x00%B%x1e"
 	args := []string{"log", "--format=" + format, "--max-count", fmt.Sprint(limit), ref}
 	if opts.Path != "" {
-		if err := validateUserPath(opts.Path, rc); err != nil {
+		entry, rel, perr := rc.resolveUserPath(opts.Path)
+		if perr != nil {
+			return nil, perr
+		}
+		if err := validatePath(rel, entry.Budget); err != nil {
 			return nil, err
 		}
-		args = append(args, "--", rc.Config.Project.ID+"/"+opts.Path)
+		args = append(args, "--", rc.Config.Project.ID+"/"+projectPath(entry.Mapping.Prefix, rel))
 	} else {
 		args = append(args, "--", rc.Config.Project.ID+"/")
 	}

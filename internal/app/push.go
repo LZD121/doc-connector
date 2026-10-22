@@ -18,10 +18,11 @@ import (
 
 // PushOptions controls one push.
 type PushOptions struct {
-	DryRun     bool
-	Resolve    []string
-	AllowLarge bool
-	Force      bool
+	DryRun         bool
+	Resolve        []string
+	AllowLarge     bool
+	Force          bool
+	FollowSymlinks bool
 }
 
 // PushResult reports what push did.
@@ -45,9 +46,8 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		return nil, err
 	}
 	defer rc.Close()
-	if rc.Root == nil {
-		return nil, errf(codeGuard, "docs directory %q does not exist", rc.Config.DocsDir).
-			withHint("create it and add documents before pushing; an empty push would remove the remote prefix")
+	if err := rc.requireRoots(); err != nil {
+		return nil, err
 	}
 	if err := recoverJournal(ctx, rc); err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		maxBytes = 0
 	}
 	warnBytes := rc.Config.Limits.WarnBytes
-	localRes, err := scanForPush(ctx, rc, !opts.DryRun, maxBytes, warnBytes, opts.Force)
+	localRes, err := scanForPush(ctx, rc, !opts.DryRun, maxBytes, warnBytes, opts.Force, opts.FollowSymlinks)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +93,11 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 	}
 	remote, _, err := rc.RemoteTree(ctx, tip)
 	if err != nil {
+		return nil, err
+	}
+	// The remote subtree may hold paths from an older mapping. Pushing would
+	// delete them, so refuse before anything is built or written.
+	if err := rc.ensureMapped(remote); err != nil {
 		return nil, err
 	}
 
@@ -187,7 +192,7 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		if ferr != nil {
 			return nil, ferr
 		}
-		again, serr := scanForPush(ctx, rc, false, maxBytes, warnBytes, opts.Force)
+		again, serr := scanForPush(ctx, rc, false, maxBytes, warnBytes, opts.Force, opts.FollowSymlinks)
 		if serr != nil {
 			return nil, serr
 		}
@@ -198,6 +203,9 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		remote2, _, rerr := rc.RemoteTree(ctx, newTip)
 		if rerr != nil {
 			return nil, rerr
+		}
+		if err := rc.ensureMapped(remote2); err != nil {
+			return nil, err
 		}
 		if clobber := trees.Clobber(base, local, remote2, resolved); len(clobber) > 0 {
 			return nil, errf(codeConflict, "push refused after the remote moved: %s", strings.Join(clobber, ", ")).
@@ -228,18 +236,26 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		withHint("wait a moment and run push again")
 }
 
-func scanForPush(ctx context.Context, rc *RepoContext, write bool, maxBytes, warnBytes int64, force bool) (*scan.Result, error) {
-	res, err := scan.Scan(ctx, rc.Store, rc.DocsDir, scan.Options{
-		Write:     write,
-		Filter:    rc.Filter,
-		MaxBytes:  maxBytes,
-		WarnBytes: warnBytes,
-		Force:     force,
-	})
-	if err != nil {
-		return nil, wrapErr(err, 1)
+func scanForPush(ctx context.Context, rc *RepoContext, write bool, maxBytes, warnBytes int64, force, followSymlinks bool) (*scan.Result, error) {
+	return rc.scanAll(ctx, ScanPolicy{
+		WarnBytes:      warnBytes,
+		MaxBytes:       maxBytes,
+		Force:          force,
+		FollowSymlinks: followSymlinks,
+	}, write)
+}
+
+// requireRoots refuses to sync when a configured docs directory is missing: a
+// push from a partial view would delete the missing directory's remote paths.
+func (rc *RepoContext) requireRoots() error {
+	for _, e := range rc.Docs {
+		if e.Root != nil {
+			continue
+		}
+		return errf(codeGuard, "docs directory %q does not exist", e.Mapping.Path).
+			withHint("create it and add documents before pushing; an empty push would remove the remote prefix")
 	}
-	return res, nil
+	return nil
 }
 
 func resolveConflicts(rc *RepoContext, requested []string) (map[string]bool, []state.Conflict, error) {
@@ -290,7 +306,7 @@ func finishPush(ctx context.Context, rc *RepoContext, syncedCommit, mirrorTip st
 		for _, c := range resolvedEntries {
 			drop[c.Path] = true
 			if c.Theirs != "" {
-				if err := rc.Root.Remove(c.Theirs); err != nil && !os.IsNotExist(err) {
+				if err := removeConflictArtifact(rc, c.Theirs); err != nil && !os.IsNotExist(err) {
 					fmt.Fprintf(rc.warnWriter, "warning: cannot remove conflict artifact %q: %v\n", c.Theirs, err)
 				}
 			}

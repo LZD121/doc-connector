@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/LZD121/doc-connector/internal/config"
@@ -54,7 +56,23 @@ func errf(code int, format string, args ...any) *Error {
 	return &Error{Code: code, Msg: fmt.Sprintf(format, args...)}
 }
 
+// docsEntry is one mapped docs directory in the loaded project.
+//
+// Budget is the number of characters left for a path inside Abs after the
+// directory path and the remote prefix, so a deeply nested docs directory gets
+// a proportionally smaller allowance.
+type docsEntry struct {
+	Mapping config.DocsMapping
+	Abs     string
+	Root    *fsx.Root
+	Budget  int
+}
+
 // RepoContext is the loaded state of one initialized project.
+//
+// Docs holds every mapped docs directory in configuration order. DocsDir and
+// Root mirror Docs[0] so single-directory code paths read the same as before
+// multi-directory support existed.
 type RepoContext struct {
 	Repo       *project.Repo
 	Runner     *gitstore.Runner
@@ -63,6 +81,7 @@ type RepoContext struct {
 	Config     *config.Config
 	State      state.State
 	Exclude    string
+	Docs       []docsEntry
 	DocsDir    string
 	Root       *fsx.Root
 	Filter     *ignore.Filter
@@ -108,26 +127,12 @@ func Load(ctx context.Context, env Env, opts LoadOptions) (*RepoContext, error) 
 	}
 
 	exclude := project.ExcludePath(repo.CommonDir)
-	if err := project.GuardUntracked(ctx, work, cfg.DocsDir); err != nil {
+	relDirs := make([]string, 0, len(cfg.DocsDirs))
+	for _, m := range cfg.DocsDirs {
+		relDirs = append(relDirs, m.Path)
+	}
+	if err := project.GuardAllDirs(ctx, work, relDirs, exclude); err != nil {
 		return nil, wrapErr(err, codeGuard)
-	}
-	if err := project.GuardIgnored(ctx, work, cfg.DocsDir, exclude); err != nil {
-		return nil, wrapErr(err, codeGuard)
-	}
-
-	docsDir := filepath.Join(repo.WorkTree, filepath.FromSlash(cfg.DocsDir))
-	if opts.CreateDocs {
-		if err := os.MkdirAll(docsDir, 0o700); err != nil {
-			return nil, errf(1, "cannot create docs directory %q: %v", docsDir, err).
-				withHint("check the parent directory permissions and free space, then retry")
-		}
-	}
-	var root *fsx.Root
-	if _, statErr := os.Lstat(docsDir); statErr == nil {
-		root, err = fsx.Open(docsDir)
-		if err != nil {
-			return nil, wrapErr(err, codeGuard)
-		}
 	}
 
 	rc := &RepoContext{
@@ -138,43 +143,240 @@ func Load(ctx context.Context, env Env, opts LoadOptions) (*RepoContext, error) 
 		Config:     cfg,
 		State:      st,
 		Exclude:    exclude,
-		DocsDir:    docsDir,
-		Root:       root,
-		Filter:     ignore.New(cfg.Ignore.Extra),
 		warnWriter: env.Stderr,
+	}
+	absDirs := make([]string, 0, len(cfg.DocsDirs))
+	for _, m := range cfg.DocsDirs {
+		abs := filepath.Join(repo.WorkTree, filepath.FromSlash(m.Path))
+		if opts.CreateDocs {
+			if err := os.MkdirAll(abs, 0o700); err != nil {
+				rc.Close()
+				return nil, errf(1, "cannot create docs directory %q: %v", abs, err).
+					withHint("check the parent directory permissions and free space, then retry")
+			}
+		}
+		entry := docsEntry{Mapping: m, Abs: abs, Budget: docsBudget(cfg, m)}
+		if _, statErr := os.Lstat(abs); statErr == nil {
+			root, oerr := fsx.Open(abs)
+			if oerr != nil {
+				rc.Close()
+				return nil, wrapErr(oerr, codeGuard)
+			}
+			entry.Root = root
+		}
+		rc.Docs = append(rc.Docs, entry)
+		absDirs = append(absDirs, abs)
+	}
+	rc.DocsDir = rc.Docs[0].Abs
+	rc.Root = rc.Docs[0].Root
+	rc.Filter = ignore.NewWithDocsIgnore(cfg.Ignore.Extra, absDirs)
+	for _, w := range rc.Filter.Warnings() {
+		fmt.Fprintf(env.Stderr, "warning: %s\n", w)
 	}
 	return rc, nil
 }
 
-// Close releases the docs root.
-func (rc *RepoContext) Close() {
-	if rc.Root != nil {
-		_ = rc.Root.Close()
+// docsBudget is the character budget for one path inside a mapped docs
+// directory: the global ceiling minus the directory path, the remote prefix and
+// the separating slash. It never drops below 1, so an over-long configuration
+// still validates paths on their own merits.
+func docsBudget(cfg *config.Config, m config.DocsMapping) int {
+	budget := cfg.Limits.MaxPathChars - len(m.Path) - len(m.Prefix) - 1
+	if budget < 1 {
+		return 1
+	}
+	return budget
+}
+
+// projectPath builds the path a file has inside the project subtree:
+// <prefix>/<rel>, or <rel> for the project root.
+func projectPath(prefix, rel string) string {
+	switch {
+	case prefix == "":
+		return rel
+	case rel == "":
+		return prefix
+	default:
+		return prefix + "/" + rel
 	}
 }
 
-// ScanPolicy carries the size tiers for one scan.
-type ScanPolicy struct {
-	WarnBytes int64
-	MaxBytes  int64
-	Force     bool
+// resolveProjectPath maps a project path back to the docs directory that owns
+// it and the path inside that directory. The longest matching prefix wins; an
+// empty-prefix mapping absorbs every other path, and its name alone (a file
+// called like a prefix) never counts as the prefix subtree.
+func (rc *RepoContext) resolveProjectPath(p string) (docsEntry, string, error) {
+	best := -1
+	for i, e := range rc.Docs {
+		prefix := e.Mapping.Prefix
+		if prefix == "" || p == prefix || !strings.HasPrefix(p, prefix+"/") {
+			continue
+		}
+		if best < 0 || len(prefix) > len(rc.Docs[best].Mapping.Prefix) {
+			best = i
+		}
+	}
+	if best >= 0 {
+		e := rc.Docs[best]
+		return e, strings.TrimPrefix(p, e.Mapping.Prefix+"/"), nil
+	}
+	for _, e := range rc.Docs {
+		if e.Mapping.Prefix == "" {
+			return e, p, nil
+		}
+	}
+	return docsEntry{}, "", rc.unmappedError([]string{p})
 }
 
-// ScanLocal hashes the docs directory without writing blobs.
-func (rc *RepoContext) ScanLocal(ctx context.Context, policy ScanPolicy) (*scan.Result, error) {
-	if rc.Root == nil {
-		return &scan.Result{Tree: trees.Tree{}}, nil
+// prefixLabels lists the configured remote prefixes in configuration order; the
+// empty prefix reads as the project root so the hint is actionable.
+func (rc *RepoContext) prefixLabels() string {
+	labels := make([]string, 0, len(rc.Docs))
+	for _, e := range rc.Docs {
+		if e.Mapping.Prefix == "" {
+			labels = append(labels, "(project root)")
+			continue
+		}
+		labels = append(labels, e.Mapping.Prefix)
 	}
-	res, err := scan.Scan(ctx, rc.Store, rc.DocsDir, scan.Options{
-		Filter:    rc.Filter,
-		MaxBytes:  policy.MaxBytes,
-		WarnBytes: policy.WarnBytes,
-		Force:     policy.Force,
-	})
+	return strings.Join(labels, ", ")
+}
+
+// unmappedError reports remote paths that no configured mapping owns. It is a
+// guard failure: nothing may be written for a path whose home is unknown.
+func (rc *RepoContext) unmappedError(paths []string) *Error {
+	ordered := append([]string{}, paths...)
+	sort.Strings(ordered)
+	list := strings.Join(ordered, ", ")
+	msg := fmt.Sprintf("remote path %q maps to no configured docs directory", ordered[0])
+	if len(ordered) > 1 {
+		msg = fmt.Sprintf("%d remote path(s) map to no configured docs directory: %s", len(ordered), list)
+	}
+	return errf(codeGuard, "%s", msg).
+		withHint("configured remote prefixes: %s; add a docs_dirs mapping that covers %s, or remove them from the remote",
+			rc.prefixLabels(), list)
+}
+
+// resolveUserPath resolves a path typed by the user: a project path, or a bare
+// path when exactly one mapped directory could own it.
+func (rc *RepoContext) resolveUserPath(p string) (docsEntry, string, error) {
+	if e, rel, err := rc.resolveProjectPath(p); err == nil {
+		return e, rel, nil
+	}
+	var entries []docsEntry
+	candidates := make([]string, 0, len(rc.Docs))
+	for _, e := range rc.Docs {
+		if e.Mapping.Prefix == "" {
+			continue
+		}
+		entries = append(entries, e)
+		candidates = append(candidates, projectPath(e.Mapping.Prefix, p))
+	}
+	if len(entries) == 1 {
+		return entries[0], p, nil
+	}
+	sort.Strings(candidates)
+	return docsEntry{}, "", errf(codeGuard, "path %q is ambiguous across %d mapped docs directories", p, len(candidates)).
+		withHint("pass one of: %s", strings.Join(candidates, ", "))
+}
+
+// ensureMapped refuses when a project tree holds a path no configured mapping
+// owns. A push in that situation would delete the path from the remote and a
+// pull would write it somewhere the user never configured.
+func (rc *RepoContext) ensureMapped(tree trees.Tree) error {
+	var unmapped []string
+	for p := range tree {
+		if _, _, err := rc.resolveProjectPath(p); err != nil {
+			unmapped = append(unmapped, p)
+		}
+	}
+	if len(unmapped) == 0 {
+		return nil
+	}
+	return rc.unmappedError(unmapped)
+}
+
+// removeConflictArtifact deletes a conflict artifact recorded as a project path.
+// A missing docs directory means there is nothing left to remove.
+func removeConflictArtifact(rc *RepoContext, theirs string) error {
+	e, rel, err := rc.resolveProjectPath(theirs)
 	if err != nil {
-		return nil, wrapErr(err, 1)
+		return err
 	}
-	return res, nil
+	if e.Root == nil {
+		return nil
+	}
+	return e.Root.Remove(rel)
+}
+
+// Close releases every docs root.
+func (rc *RepoContext) Close() {
+	for _, e := range rc.Docs {
+		if e.Root != nil {
+			_ = e.Root.Close()
+		}
+	}
+}
+
+// ScanPolicy carries the size tiers and link handling for one scan.
+type ScanPolicy struct {
+	WarnBytes      int64
+	MaxBytes       int64
+	Force          bool
+	FollowSymlinks bool
+}
+
+// ScanLocal hashes every docs directory without writing blobs. Tree keys are
+// project paths, so one tree covers every mapping.
+func (rc *RepoContext) ScanLocal(ctx context.Context, policy ScanPolicy) (*scan.Result, error) {
+	return rc.scanAll(ctx, policy, false)
+}
+
+// scanAll scans every existing docs directory and merges the results. Each
+// directory's tree is re-keyed to its project path; ignored counts and byte
+// totals add up, and skipped entries are reported as project paths.
+func (rc *RepoContext) scanAll(ctx context.Context, policy ScanPolicy, write bool) (*scan.Result, error) {
+	out := &scan.Result{Tree: trees.Tree{}}
+	owner := map[string]string{}
+	for _, e := range rc.Docs {
+		if e.Root == nil {
+			continue
+		}
+		res, err := scan.Scan(ctx, rc.Store, e.Abs, scan.Options{
+			Write:          write,
+			Filter:         rc.Filter,
+			MaxBytes:       policy.MaxBytes,
+			WarnBytes:      policy.WarnBytes,
+			Force:          policy.Force,
+			FollowSymlinks: policy.FollowSymlinks,
+		})
+		if err != nil {
+			return nil, wrapErr(err, 1)
+		}
+		out.Ignored += res.Ignored
+		out.TotalBytes += res.TotalBytes
+		for _, skipped := range res.Skipped {
+			out.Skipped = append(out.Skipped, projectPath(e.Mapping.Prefix, skipped))
+		}
+		for rel, entry := range res.Tree {
+			key := projectPath(e.Mapping.Prefix, rel)
+			if prev, ok := owner[key]; ok {
+				return nil, errf(codeGuard, "docs path %q is produced by both %q and %q", key, prev, e.Mapping.Path).
+					withHint("give one of those docs_dirs a distinct prefix so every file maps to exactly one remote path")
+			}
+			owner[key] = e.Mapping.Path
+			out.Tree[key] = entry
+		}
+	}
+	sort.Strings(out.Skipped)
+	keys := make([]string, 0, len(out.Tree))
+	for k := range out.Tree {
+		keys = append(keys, k)
+	}
+	if err := fsx.CheckCaseCollisions(keys); err != nil {
+		return nil, wrapErr(err, codeGuard)
+	}
+	return out, nil
 }
 
 // Fetch updates the mirror and the fetched cache, returning the remote tip.

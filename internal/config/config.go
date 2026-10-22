@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/LZD121/doc-connector/internal/fsx"
+
 	"go.yaml.in/yaml/v3"
 
 	"github.com/LZD121/doc-connector/internal/state"
@@ -19,8 +21,13 @@ import (
 // ErrNotFound is returned by Load when no configuration exists yet.
 var ErrNotFound = errors.New("config not found")
 
-// SchemaVersion is the only schema this build understands.
-const SchemaVersion = 1
+// SchemaVersion is the only schema this build writes. Schema 1 files are still
+// read: their single docs_dir is normalized to one mapping with an empty
+// prefix, which is byte-for-byte the v1.0 remote layout.
+const SchemaVersion = 2
+
+// SchemaVersionSingleDir is the pre-multi-directory schema, still loadable.
+const SchemaVersionSingleDir = 1
 
 // Defaults applied when a value is absent.
 const (
@@ -63,23 +70,36 @@ type Author struct {
 	Email string `yaml:"email"`
 }
 
+// DocsMapping is one local docs directory and the remote prefix it maps to.
+//
+// Prefix "" means the project root: <project_id>/<rel>, the v1.0 layout. A
+// non-empty prefix means <project_id>/<prefix>/<rel>.
+type DocsMapping struct {
+	Path   string `yaml:"path"`
+	Prefix string `yaml:"prefix,omitempty"`
+}
+
 // Config is the hidden configuration file.
 //
 // Unknown keys are preserved verbatim through Extra instead of being rejected:
 // a user typo must not make the whole file unreadable, and silently dropping
 // the key on the next write would destroy configuration.
 type Config struct {
-	Schema    int     `yaml:"schema"`
-	Remote    string  `yaml:"remote"`
-	Branch    string  `yaml:"branch"`
-	DocsDir   string  `yaml:"docs_dir"`
-	Machine   string  `yaml:"machine"`
-	Project   Project `yaml:"project"`
-	Ignore    Ignore  `yaml:"ignore"`
-	Limits    Limits  `yaml:"limits"`
-	Author    *Author `yaml:"author,omitempty"`
-	CreatedAt string  `yaml:"created_at"`
-	CreatedBy string  `yaml:"created_by"`
+	Schema int    `yaml:"schema"`
+	Remote string `yaml:"remote"`
+	Branch string `yaml:"branch"`
+	// DocsDir mirrors DocsDirs[0].Path. It is written for readability and
+	// accepted on load so schema-1 files keep working; DocsDirs is
+	// authoritative whenever it is non-empty.
+	DocsDir   string        `yaml:"docs_dir,omitempty"`
+	DocsDirs  []DocsMapping `yaml:"docs_dirs,omitempty"`
+	Machine   string        `yaml:"machine"`
+	Project   Project       `yaml:"project"`
+	Ignore    Ignore        `yaml:"ignore"`
+	Limits    Limits        `yaml:"limits"`
+	Author    *Author       `yaml:"author,omitempty"`
+	CreatedAt string        `yaml:"created_at"`
+	CreatedBy string        `yaml:"created_by"`
 
 	Extra map[string]any `yaml:",inline"`
 }
@@ -108,15 +128,41 @@ func Load(gitDir string) (cfg *Config, warnings []string, err error) {
 		warnings = append(warnings, fmt.Sprintf("unknown config key %q in %s", k, FilePath(gitDir)))
 	}
 	cfg.applyDefaults()
+	if w := cfg.normalizeDocsDirs(); w != "" {
+		warnings = append(warnings, w)
+	}
 	if verr := cfg.Validate(); verr != nil {
 		return nil, warnings, verr
 	}
 	return cfg, warnings, nil
 }
 
+// normalizeDocsDirs makes DocsDirs authoritative and keeps DocsDir as a mirror
+// of its first entry. A schema-1 file (or any file with only docs_dir) becomes
+// a single mapping with an empty prefix, which is the v1.0 remote layout.
+func (c *Config) normalizeDocsDirs() (warning string) {
+	if len(c.DocsDirs) == 0 {
+		path := c.DocsDir
+		if path == "" {
+			path = DefaultDocsDir
+		}
+		c.DocsDirs = []DocsMapping{{Path: path}}
+	}
+	primary := c.DocsDirs[0].Path
+	if c.DocsDir != "" && c.DocsDir != primary {
+		warning = fmt.Sprintf("config: docs_dir %q disagrees with docs_dirs[0].path %q; docs_dirs wins", c.DocsDir, primary)
+	}
+	c.DocsDir = primary
+	if c.Schema == SchemaVersionSingleDir {
+		c.Schema = SchemaVersion
+	}
+	return warning
+}
+
 // Save writes the config atomically with mode 0600.
 func Save(gitDir string, cfg *Config) error {
 	cfg.applyDefaults()
+	cfg.normalizeDocsDirs()
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -139,8 +185,11 @@ func (c *Config) applyDefaults() {
 	if c.Branch == "" {
 		c.Branch = DefaultBranch
 	}
-	if c.DocsDir == "" {
+	if c.DocsDir == "" && len(c.DocsDirs) == 0 {
 		c.DocsDir = DefaultDocsDir
+	}
+	if c.DocsDir == "" && len(c.DocsDirs) > 0 {
+		c.DocsDir = c.DocsDirs[0].Path
 	}
 	if c.Limits.WarnBytes == 0 {
 		c.Limits.WarnBytes = DefaultWarnBytes
@@ -173,7 +222,7 @@ func (e *ValidationError) HintText() string { return e.Hint }
 
 // Validate checks schema and field invariants that do not require git.
 func (c *Config) Validate() error {
-	if c.Schema != SchemaVersion {
+	if c.Schema != SchemaVersion && c.Schema != SchemaVersionSingleDir {
 		return fmt.Errorf("unsupported config schema %d (this build expects %d)", c.Schema, SchemaVersion)
 	}
 	if strings.TrimSpace(c.Remote) == "" {
@@ -194,6 +243,9 @@ func (c *Config) Validate() error {
 	if !filepath.IsLocal(c.DocsDir) || c.DocsDir == "." {
 		return fmt.Errorf("config: docs_dir %q must be a relative path inside the repository", c.DocsDir)
 	}
+	if err := validateDocsDirs(c.DocsDirs); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.Machine) == "" {
 		return fmt.Errorf("config: machine must not be empty")
 	}
@@ -204,6 +256,77 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: limits must satisfy 0 < warn_bytes < max_bytes")
 	}
 	return nil
+}
+
+// validateDocsDirs checks the multi-directory mapping list. Every rule here is
+// about ambiguity: two directories claiming one remote prefix, prefixes that
+// nest, or paths that contain each other would make "which file is this?"
+// unanswerable after a pull.
+func validateDocsDirs(dirs []DocsMapping) error {
+	if len(dirs) == 0 {
+		return nil
+	}
+	seenPath := map[string]string{}
+	seenPrefix := map[string]string{}
+	for _, m := range dirs {
+		path := strings.TrimSpace(m.Path)
+		if path == "" || !filepath.IsLocal(path) || path == "." {
+			return fmt.Errorf("config: docs_dirs path %q must be a relative path inside the repository", m.Path)
+		}
+		if strings.HasSuffix(filepath.ToSlash(path), "/") {
+			return fmt.Errorf("config: docs_dirs path %q must not end with a slash", m.Path)
+		}
+		key := fsx.CaseKey(filepath.ToSlash(path))
+		if prev, ok := seenPath[key]; ok {
+			return &ValidationError{
+				Msg:  fmt.Sprintf("config: docs_dirs lists %q twice", prev),
+				Hint: "give each docs directory a unique path",
+			}
+		}
+		seenPath[key] = path
+
+		prefix := strings.TrimSpace(m.Prefix)
+		if prefix == "" {
+			continue
+		}
+		if strings.HasSuffix(prefix, "/") || strings.HasPrefix(prefix, "/") {
+			return fmt.Errorf("config: docs_dirs prefix %q must not start or end with a slash", m.Prefix)
+		}
+		if err := fsx.ValidateRel(prefix); err != nil {
+			return &ValidationError{
+				Msg:  fmt.Sprintf("config: docs_dirs prefix %q is not a safe relative path", m.Prefix),
+				Hint: "use a plain relative path such as \"notes\" or \"team/notes\"",
+			}
+		}
+		pkey := fsx.CaseKey(prefix)
+		if prev, ok := seenPrefix[pkey]; ok {
+			return fmt.Errorf("config: docs_dirs prefix %q is used by two directories", prev)
+		}
+		seenPrefix[pkey] = prefix
+	}
+
+	for i := range dirs {
+		for j := range dirs {
+			if i == j {
+				continue
+			}
+			a, b := dirs[i], dirs[j]
+			if containsPath(a.Path, b.Path) {
+				return fmt.Errorf("config: docs_dirs path %q contains %q; nested docs directories would double-count files", a.Path, b.Path)
+			}
+			if a.Prefix != "" && (b.Prefix == a.Prefix || strings.HasPrefix(b.Prefix, a.Prefix+"/")) {
+				return fmt.Errorf("config: docs_dirs prefix %q contains %q; nested remote prefixes are ambiguous", a.Prefix, b.Prefix)
+			}
+		}
+	}
+	return nil
+}
+
+// containsPath reports whether parent is an ancestor directory of child.
+func containsPath(parent, child string) bool {
+	p := strings.Trim(filepath.ToSlash(parent), "/")
+	c := strings.Trim(filepath.ToSlash(child), "/")
+	return strings.HasPrefix(c, p+"/")
 }
 
 // EmbeddedCredentials reports whether a remote URL carries a password or token

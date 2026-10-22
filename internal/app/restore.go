@@ -39,10 +39,14 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 	}
 	defer rc.Close()
 
-	budget := rc.Config.Limits.MaxPathChars - len(rc.Config.DocsDir) - 1
-	if err := fsx.ValidateSyncPath(opts.Path, budget); err != nil {
+	entry, rel, err := rc.resolveUserPath(opts.Path)
+	if err != nil {
+		return nil, err
+	}
+	if err := fsx.ValidateSyncPath(rel, entry.Budget); err != nil {
 		return nil, wrapErr(err, codeGuard)
 	}
+	projectRel := projectPath(entry.Mapping.Prefix, rel)
 
 	rev := opts.Commit
 	if rev == "" {
@@ -66,7 +70,7 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 	}
 	commit = strings.TrimSpace(commit)
 
-	oid, mode, berr := blobAt(ctx, rc, commit, opts.Path)
+	oid, mode, berr := blobAt(ctx, rc, commit, projectRel)
 	if berr != nil {
 		return nil, berr
 	}
@@ -75,37 +79,37 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 	if serr != nil {
 		return nil, serr
 	}
-	res := &RestoreResult{Path: opts.Path, Commit: commit, OID: oid}
+	res := &RestoreResult{Path: projectRel, Commit: commit, OID: oid}
 
 	if opts.To != "" {
-		target := filepath.Join(opts.To, filepath.FromSlash(opts.Path))
+		target := filepath.Join(opts.To, filepath.FromSlash(projectRel))
 		if err := writeAtomicAbs(target, staged, parseGitMode(mode)); err != nil {
 			return nil, wrapErr(err, 1)
 		}
 		return res, nil
 	}
-	if rc.Root == nil {
-		return nil, errf(codeGuard, "docs directory is missing").
+	if entry.Root == nil {
+		return nil, errf(codeGuard, "docs directory %q is missing", entry.Mapping.Path).
 			withHint("re-create the configured docs directory, then retry")
 	}
 
-	if _, statErr := rc.Root.Lstat(opts.Path); statErr == nil && !opts.Force {
+	if _, statErr := entry.Root.Lstat(rel); statErr == nil && !opts.Force {
 		baseline, lerr := rc.Baseline(ctx)
 		if lerr != nil {
 			return nil, lerr
 		}
-		oids, herr := rc.Store.HashPaths(ctx, rc.DocsDir, []string{opts.Path}, false)
+		oids, herr := rc.Store.HashPaths(ctx, entry.Abs, []string{rel}, false)
 		if herr != nil {
 			return nil, wrapErr(herr, 1)
 		}
-		b, ok := baseline[opts.Path]
+		b, ok := baseline[projectRel]
 		if !ok || b.OID != strings.TrimSpace(oids[0]) {
-			return nil, errf(codeConflict, "%q has unsynced local changes", opts.Path).
+			return nil, errf(codeConflict, "%q has unsynced local changes", projectRel).
 				withHint("re-run with --force to overwrite them (the old bytes remain recoverable from the mirror)")
 		}
 	}
 
-	if err := writeAtomicFromPath(rc.Root, opts.Path, staged, parseGitMode(mode)); err != nil {
+	if err := writeAtomicFromPath(entry.Root, rel, staged, parseGitMode(mode)); err != nil {
 		return nil, wrapErr(err, 1)
 	}
 
@@ -117,14 +121,14 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 		var kept []state.Conflict
 		changed := false
 		for _, c := range st.Unresolved {
-			if c.Path != opts.Path {
+			if c.Path != projectRel {
 				kept = append(kept, c)
 				continue
 			}
 			changed = true
 			if c.Theirs != "" {
 				res.Artifact = c.Theirs
-				if err := rc.Root.Remove(c.Theirs); err != nil && !os.IsNotExist(err) {
+				if err := removeConflictArtifact(rc, c.Theirs); err != nil && !os.IsNotExist(err) {
 					fmt.Fprintf(rc.warnWriter, "warning: cannot remove conflict artifact %q: %v\n", c.Theirs, err)
 				}
 			}
@@ -144,10 +148,11 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 	return res, nil
 }
 
-// blobAt resolves the blob at <commit>:<pid>/<path>, falling back to the last
-// commit that touched the path when the file is gone at that revision.
-func blobAt(ctx context.Context, rc *RepoContext, commit, rel string) (string, string, error) {
-	prefix := rc.Config.Project.ID + "/" + rel
+// blobAt resolves the blob at <commit>:<project_id>/<ppath>, falling back to
+// the last commit that touched the path when the file is gone at that
+// revision. ppath is a project path, so it carries the mapping prefix, if any.
+func blobAt(ctx context.Context, rc *RepoContext, commit, ppath string) (string, string, error) {
+	prefix := rc.Config.Project.ID + "/" + ppath
 	spec := commit + ":" + prefix
 
 	out, err := rc.Store.Run(ctx, "rev-parse", "--verify", "--quiet", spec)
@@ -158,15 +163,15 @@ func blobAt(ctx context.Context, rc *RepoContext, commit, rel string) (string, s
 		}
 		last = strings.TrimSpace(last)
 		if last == "" {
-			return "", "", errf(codeUsage, "path %q has no history at %s", rel, shortOID(commit)).
-				withHint("check the path with \"doc-connector log --path %s\"", rel)
+			return "", "", errf(codeUsage, "path %q has no history at %s", ppath, shortOID(commit)).
+				withHint("check the path with \"doc-connector log --path %s\"", ppath)
 		}
 		commit = last
 		spec = commit + ":" + prefix
 		out, err = rc.Store.Run(ctx, "rev-parse", "--verify", "--quiet", spec)
 		if err != nil {
-			return "", "", errf(codeUsage, "path %q could not be read from %s", rel, shortOID(commit)).
-				withHint("confirm the path still exists at that commit with \"doc-connector log --path %s\"", rel)
+			return "", "", errf(codeUsage, "path %q could not be read from %s", ppath, shortOID(commit)).
+				withHint("confirm the path still exists at that commit with \"doc-connector log --path %s\"", ppath)
 		}
 	}
 	oid := strings.TrimSpace(out)
@@ -175,7 +180,7 @@ func blobAt(ctx context.Context, rc *RepoContext, commit, rel string) (string, s
 		return "", "", wrapErr(terr, 1)
 	}
 	if strings.TrimSpace(kind) != "blob" {
-		return "", "", errf(codeGuard, "path %q is not a file at %s", rel, shortOID(commit)).
+		return "", "", errf(codeGuard, "path %q is not a file at %s", ppath, shortOID(commit)).
 			withHint("restore reads plain files only; directories and symlinks cannot be restored")
 	}
 

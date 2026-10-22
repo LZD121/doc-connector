@@ -84,10 +84,24 @@ func GuardIgnored(ctx context.Context, r *gitstore.Runner, docsDir, excludePath 
 
 // GuardAll runs the isolation checks in their required order.
 func GuardAll(ctx context.Context, r *gitstore.Runner, docsDir, excludePath string) error {
-	if err := GuardUntracked(ctx, r, docsDir); err != nil {
-		return err
+	return GuardAllDirs(ctx, r, []string{docsDir}, excludePath)
+}
+
+// GuardAllDirs runs both isolation checks for every mapped docs directory, in
+// the same order as GuardAll. The first offending directory fails the call and
+// names itself, so a multi-directory project reports the specific one.
+func GuardAllDirs(ctx context.Context, r *gitstore.Runner, docsDirs []string, excludePath string) error {
+	for _, dir := range docsDirs {
+		if err := GuardUntracked(ctx, r, dir); err != nil {
+			return err
+		}
 	}
-	return GuardIgnored(ctx, r, docsDir, excludePath)
+	for _, dir := range docsDirs {
+		if err := GuardIgnored(ctx, r, dir, excludePath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func splitNUL(s string) []string {

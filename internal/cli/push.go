@@ -25,6 +25,7 @@ func cmdPush(ctx context.Context, e *runnerEnv, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print the plan without writing")
 	allowLarge := fs.Bool("allow-large", false, "allow files above the hard size limit")
 	force := fs.Bool("force", false, "allow files above the warning size")
+	follow := fs.Bool("follow-symlinks", false, "synchronize symlink targets as regular files")
 	jsonOut := fs.Bool("json", false, "print one JSON document")
 	var resolve stringList
 	fs.Var(&resolve, "resolve", "accept the local version for an unresolved path (repeatable)")
@@ -42,7 +43,7 @@ func cmdPush(ctx context.Context, e *runnerEnv, args []string) error {
 
 	res, perr := app.Push(ctx, app.Env{
 		Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr, Version: e.Version,
-	}, app.PushOptions{DryRun: *dryRun, Resolve: resolve, AllowLarge: *allowLarge, Force: *force})
+	}, app.PushOptions{DryRun: *dryRun, Resolve: resolve, AllowLarge: *allowLarge, Force: *force, FollowSymlinks: *follow})
 	if res == nil {
 		return Wrap(perr, CodeConflict)
 	}

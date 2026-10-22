@@ -9,15 +9,17 @@ import (
 
 	"github.com/LZD121/doc-connector/internal/conflict"
 	"github.com/LZD121/doc-connector/internal/fsx"
+	"github.com/LZD121/doc-connector/internal/ignore"
 	"github.com/LZD121/doc-connector/internal/state"
 	"github.com/LZD121/doc-connector/internal/trees"
 )
 
 // PullOptions controls one pull.
 type PullOptions struct {
-	DryRun     bool
-	Force      bool
-	AllowLarge bool
+	DryRun         bool
+	Force          bool
+	AllowLarge     bool
+	FollowSymlinks bool
 }
 
 // PullResult reports what pull did (or would do).
@@ -30,11 +32,22 @@ type PullResult struct {
 	RemoteTip  string
 }
 
+// resolvedAction is one classified path bound to the docs directory that owns
+// it: Action.Path is the project path, Rel the path inside Docs.Abs.
+type resolvedAction struct {
+	Action trees.Action
+	Docs   docsEntry
+	Rel    string
+}
+
 type conflictPlan struct {
-	Path   string
-	Theirs string
-	OID    string
-	Entry  state.Conflict
+	Path      string // project path recorded in state and shown to the user
+	Rel       string // path inside Docs.Root
+	Docs      docsEntry
+	Theirs    string // project path of the artifact, recorded in state
+	TheirsRel string // artifact path inside Docs.Root
+	OID       string
+	Conflict  state.Conflict
 }
 
 // Pull applies remote additions, modifications and deletions to the docs
@@ -69,9 +82,10 @@ func Pull(ctx context.Context, env Env, opts PullOptions) (*PullResult, error) {
 		maxBytes = 0
 	}
 	local, err := rc.ScanLocal(ctx, ScanPolicy{
-		WarnBytes: rc.Config.Limits.WarnBytes,
-		MaxBytes:  maxBytes,
-		Force:     opts.Force,
+		WarnBytes:      rc.Config.Limits.WarnBytes,
+		MaxBytes:       maxBytes,
+		Force:          opts.Force,
+		FollowSymlinks: opts.FollowSymlinks,
 	})
 	if err != nil {
 		return nil, err
@@ -90,9 +104,21 @@ func Pull(ctx context.Context, env Env, opts PullOptions) (*PullResult, error) {
 		localTree = trees.NormalizeModes(localTree, base, remote)
 	}
 	actions, _ := trees.Classify(base, localTree, remote)
-	res := &PullResult{Actions: actions, DryRun: dryRun, RemoteTip: tip}
+	// Every classified path must belong to a configured mapping, and .docignore
+	// is a local-only control: a path it hides must never be written, deleted or
+	// turned into a conflict by a pull, even while the remote still tracks it.
+	// Resolving up front means an unmapped path aborts before any write.
+	resolved, unmapped := rc.resolveActions(actions)
+	if len(unmapped) > 0 {
+		return nil, rc.unmappedError(unmapped)
+	}
+	res := &PullResult{DryRun: dryRun, RemoteTip: tip}
+	res.Actions = make([]trees.Action, 0, len(resolved))
+	for _, ra := range resolved {
+		res.Actions = append(res.Actions, ra.Action)
+	}
 
-	writes, deletes := planPull(actions)
+	writes, deletes := planPull(resolved)
 	res.Writes = len(writes)
 	res.Deletes = len(deletes)
 
@@ -100,44 +126,53 @@ func Pull(ctx context.Context, env Env, opts PullOptions) (*PullResult, error) {
 	for _, c := range rc.State.Unresolved {
 		existing[c.Path] = c
 	}
-	budget := rc.Config.Limits.MaxPathChars - len(rc.Config.DocsDir) - 1
 	var plans []conflictPlan
-	for _, a := range actions {
-		if a.Status != "C" {
+	for _, ra := range resolved {
+		if ra.Action.Status != "C" {
 			continue
 		}
-		res.Conflicted = append(res.Conflicted, a.Path)
-		if _, seen := existing[a.Path]; seen {
+		res.Conflicted = append(res.Conflicted, ra.Action.Path)
+		if _, seen := existing[ra.Action.Path]; seen {
 			continue
 		}
-		plan := conflictPlan{Path: a.Path, Entry: state.Conflict{
-			Path: a.Path,
-			Kind: conflict.Kind(a.Class.String()),
-			At:   state.Now(),
-		}}
-		if a.Remote != nil {
-			theirs, aerr := conflict.ArtifactPath(rc.Root, a.Path, rc.Config.Machine, budget)
+		plan := conflictPlan{
+			Path: ra.Action.Path,
+			Rel:  ra.Rel,
+			Docs: ra.Docs,
+			Conflict: state.Conflict{
+				Path: ra.Action.Path,
+				Kind: conflict.Kind(ra.Action.Class.String()),
+				At:   state.Now(),
+			},
+		}
+		if ra.Action.Remote != nil {
+			if ra.Docs.Root == nil {
+				return nil, errf(codeGuard, "docs directory %q is missing", ra.Docs.Mapping.Path).
+					withHint("re-create it, then run pull again")
+			}
+			theirsRel, aerr := conflict.ArtifactPath(ra.Docs.Root, ra.Rel, rc.Config.Machine, ra.Docs.Budget)
 			if aerr != nil {
 				return nil, wrapErr(aerr, codeGuard)
 			}
-			plan.Theirs = theirs
-			plan.OID = a.Remote.OID
-			plan.Entry.Theirs = theirs
-			plan.Entry.RemoteOID = a.Remote.OID
+			plan.TheirsRel = theirsRel
+			plan.Theirs = projectPath(ra.Docs.Mapping.Prefix, theirsRel)
+			plan.OID = ra.Action.Remote.OID
+			plan.Conflict.Theirs = plan.Theirs
+			plan.Conflict.RemoteOID = ra.Action.Remote.OID
 		}
-		if a.Base != nil {
-			plan.Entry.BaseOID = a.Base.OID
+		if ra.Action.Base != nil {
+			plan.Conflict.BaseOID = ra.Action.Base.OID
 		}
 		plans = append(plans, plan)
 	}
 
-	for _, a := range append(append([]trees.Action{}, writes...), deletes...) {
-		if err := fsx.ValidateSyncPath(a.Path, budget); err != nil {
+	for _, ra := range append(append([]resolvedAction{}, writes...), deletes...) {
+		if err := fsx.ValidateSyncPath(ra.Rel, ra.Docs.Budget); err != nil {
 			return nil, wrapErr(err, codeGuard)
 		}
 	}
-	for _, a := range writes {
-		if err := checkRemoteSize(ctx, rc, a.Path, a.Remote.OID, opts.Force, maxBytes); err != nil {
+	for _, ra := range writes {
+		if err := checkRemoteSize(ctx, rc, ra.Action.Path, ra.Action.Remote.OID, opts.Force, maxBytes); err != nil {
 			return nil, err
 		}
 	}
@@ -189,9 +224,61 @@ func checkRemoteSize(ctx context.Context, rc *RepoContext, pathName, oid string,
 	return nil
 }
 
-func planPull(actions []trees.Action) (writes, deletes []trees.Action) {
+// resolveActions binds every classified path to its docs directory and drops
+// actions for paths the local .docignore rules hide. Unmapped paths are
+// returned so the caller can refuse the whole pull before any write.
+func (rc *RepoContext) resolveActions(actions []trees.Action) ([]resolvedAction, []string) {
+	resolved := make([]resolvedAction, 0, len(actions))
+	var unmapped []string
 	for _, a := range actions {
-		switch a.Class {
+		entry, rel, err := rc.resolveProjectPath(a.Path)
+		if err != nil {
+			unmapped = append(unmapped, a.Path)
+			continue
+		}
+		if rc.Filter != nil && rc.Filter.Match(rel, false) {
+			continue
+		}
+		resolved = append(resolved, resolvedAction{Action: a, Docs: entry, Rel: rel})
+	}
+	return resolved, unmapped
+}
+
+// dropIgnoredActions removes actions for paths the local .docignore rules hide.
+func dropIgnoredActions(filter *ignore.Filter, actions []resolvedAction) []resolvedAction {
+	if filter == nil || len(actions) == 0 {
+		return actions
+	}
+	kept := actions[:0]
+	for _, a := range actions {
+		if filter.Match(a.Rel, false) {
+			continue
+		}
+		kept = append(kept, a)
+	}
+	return kept
+}
+
+// dropIgnoredPlans removes materialized conflicts for paths the local
+// .docignore rules hide: an ignored file must not gain a .theirs copy or an
+// unresolved entry that would block push forever.
+func dropIgnoredPlans(filter *ignore.Filter, plans []conflictPlan) []conflictPlan {
+	if filter == nil || len(plans) == 0 {
+		return plans
+	}
+	kept := plans[:0]
+	for _, p := range plans {
+		if filter.Match(p.Rel, false) {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	return kept
+}
+
+func planPull(actions []resolvedAction) (writes, deletes []resolvedAction) {
+	for _, a := range actions {
+		switch a.Action.Class {
 		case trees.RemoteAdd, trees.RemoteMod:
 			writes = append(writes, a)
 		case trees.RemoteDelete:
@@ -201,7 +288,14 @@ func planPull(actions []trees.Action) (writes, deletes []trees.Action) {
 	return writes, deletes
 }
 
-func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes, deletes []trees.Action, plans []conflictPlan, existing map[string]state.Conflict) (int, int, error) {
+func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes, deletes []resolvedAction, plans []conflictPlan, existing map[string]state.Conflict) (int, int, error) {
+	// A pull must never write or delete a path the local .docignore hides.
+	// Pull drops those actions before planning; this keeps the apply loop safe
+	// on its own even if a caller ever hands it an unfiltered plan.
+	writes = dropIgnoredActions(rc.Filter, writes)
+	deletes = dropIgnoredActions(rc.Filter, deletes)
+	plans = dropIgnoredPlans(rc.Filter, plans)
+
 	opRoot := filepath.Join(state.TmpDir(rc.Repo.GitDir), "op-"+randomSuffix())
 	filesDir := filepath.Join(opRoot, "files")
 	trashDir := filepath.Join(opRoot, "trash")
@@ -214,7 +308,7 @@ func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes
 
 	oids := make([]string, 0, len(writes)+len(plans))
 	for _, a := range writes {
-		oids = append(oids, a.Remote.OID)
+		oids = append(oids, a.Action.Remote.OID)
 	}
 	for _, p := range plans {
 		if p.OID != "" {
@@ -234,17 +328,19 @@ func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes
 		RemoteCommit: tip,
 		TmpDir:       opRoot,
 	}
+	// Journal paths are project paths, so recovery re-resolves them against the
+	// same configuration instead of assuming one docs directory.
 	ops := make([]state.JournalOp, 0, len(writes)+len(deletes)+len(plans))
 	for _, a := range writes {
 		ops = append(ops, state.JournalOp{
-			Action: "write", Path: a.Path, Mode: modeString(a.Remote.Mode),
-			OID: a.Remote.OID, Staged: staged[a.Remote.OID],
+			Action: "write", Path: a.Action.Path, Mode: modeString(a.Action.Remote.Mode),
+			OID: a.Action.Remote.OID, Staged: staged[a.Action.Remote.OID],
 		})
 	}
 	for _, a := range deletes {
 		ops = append(ops, state.JournalOp{
-			Action: "delete", Path: a.Path,
-			Staged: filepath.Join(trashDir, filepath.FromSlash(a.Path)),
+			Action: "delete", Path: a.Action.Path,
+			Staged: filepath.Join(trashDir, filepath.FromSlash(a.Docs.Mapping.Path), filepath.FromSlash(a.Rel)),
 		})
 	}
 	for _, p := range plans {
@@ -261,7 +357,7 @@ func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes
 	nextState := rc.State
 	nextState.Unresolved = append([]state.Conflict{}, rc.State.Unresolved...)
 	for _, p := range plans {
-		nextState.Unresolved = append(nextState.Unresolved, p.Entry)
+		nextState.Unresolved = append(nextState.Unresolved, p.Conflict)
 	}
 	// The baseline advances only when nothing is unresolved.
 	if len(nextState.Unresolved) == 0 {
@@ -281,28 +377,32 @@ func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes
 
 	appliedWrites := 0
 	for _, a := range writes {
-		if err := writeAtomicFromPath(rc.Root, a.Path, staged[a.Remote.OID], parseGitMode(modeString(a.Remote.Mode))); err != nil {
+		if err := writeAtomicFromPath(a.Docs.Root, a.Rel, staged[a.Action.Remote.OID], parseGitMode(modeString(a.Action.Remote.Mode))); err != nil {
 			return appliedWrites, 0, wrapErr(err, 1)
 		}
 		appliedWrites++
 	}
 
 	appliedDeletes := 0
+	deleted := map[string][]string{}
 	for _, a := range deletes {
-		abs := filepath.Join(rc.DocsDir, filepath.FromSlash(a.Path))
-		trash := filepath.Join(trashDir, filepath.FromSlash(a.Path))
+		abs := filepath.Join(a.Docs.Abs, filepath.FromSlash(a.Rel))
+		trash := filepath.Join(trashDir, filepath.FromSlash(a.Docs.Mapping.Path), filepath.FromSlash(a.Rel))
 		if err := moveToTrash(abs, trash); err != nil {
 			return appliedWrites, appliedDeletes, wrapErr(err, 1)
 		}
+		deleted[a.Docs.Abs] = append(deleted[a.Docs.Abs], a.Rel)
 		appliedDeletes++
 	}
-	cleanupEmptyDirs(rc.DocsDir, actionPaths(deletes))
+	for dir, rels := range deleted {
+		cleanupEmptyDirs(dir, rels)
+	}
 
 	for _, p := range plans {
 		if p.Theirs == "" || p.OID == "" {
 			continue
 		}
-		if err := writeAtomicFromPath(rc.Root, p.Theirs, staged[p.OID], 0o644); err != nil {
+		if err := writeAtomicFromPath(p.Docs.Root, p.TheirsRel, staged[p.OID], 0o644); err != nil {
 			return appliedWrites, appliedDeletes, wrapErr(err, 1)
 		}
 	}
@@ -316,12 +416,4 @@ func applyPull(ctx context.Context, rc *RepoContext, tip, treeOID string, writes
 	}
 	_ = os.RemoveAll(opRoot)
 	return appliedWrites, appliedDeletes, nil
-}
-
-func actionPaths(actions []trees.Action) []string {
-	out := make([]string, len(actions))
-	for i, a := range actions {
-		out[i] = a.Path
-	}
-	return out
 }

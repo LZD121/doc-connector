@@ -11,6 +11,7 @@ Commands:
   push      Publish the local docs directory to <project_id>/ on the private remote
   pull      Apply remote changes to the local docs directory
   log       Show sync history from the local mirror (offline)
+  diff      Show a historical diff for a path in this project
   restore   Write a historical version of a path back to the docs directory
   doctor    Diagnose the repository, exclude block, lock and remote (read-only)
 
@@ -64,9 +65,10 @@ const statusUsage = `Usage:
 Reports clean/ahead/behind/diverged plus per-file three-way state. Read-only.
 
 Flags:
-      --offline   Do not fetch the remote; report the cached remote tip
-      --json      Print one JSON document
-  -h, --help      Show this help
+      --offline          Do not fetch the remote; report the cached remote tip
+      --follow-symlinks  Synchronize symlink targets as regular files
+      --json             Print one JSON document
+  -h, --help             Show this help
 `
 
 const pushUsage = `Usage:
@@ -80,6 +82,7 @@ Flags:
       --resolve <path>     Accept the local version for an unresolved conflict (repeatable)
       --force              Allow files above the 50 MiB warning limit
       --allow-large        Allow files above the 100 MiB hard limit
+      --follow-symlinks    Synchronize symlink targets as regular files
       --json               Print one JSON document
   -h, --help               Show this help
 `
@@ -91,11 +94,12 @@ Applies remote additions, modifications and deletions to the docs directory.
 Conflicts keep the local file and leave a <name>.theirs.<machine> copy.
 
 Flags:
-      --dry-run     Print the plan without writing
-      --force       Allow files above the 50 MiB warning limit
-      --allow-large Allow files above the 100 MiB hard limit
-      --json        Print one JSON document
-  -h, --help        Show this help
+      --dry-run          Print the plan without writing
+      --force            Allow files above the 50 MiB warning limit
+      --allow-large      Allow files above the 100 MiB hard limit
+      --follow-symlinks  Synchronize symlink targets as regular files
+      --json             Print one JSON document
+  -h, --help             Show this help
 `
 
 const logUsage = `Usage:

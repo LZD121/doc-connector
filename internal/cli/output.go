@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/LZD121/doc-connector/internal/app"
+	"github.com/LZD121/doc-connector/internal/config"
 	"github.com/LZD121/doc-connector/internal/trees"
 )
 
@@ -125,8 +126,16 @@ func commandName(args []string) string {
 // --- status ---------------------------------------------------------------
 
 type statusProject struct {
-	ID      string `json:"id"`
-	DocsDir string `json:"docs_dir"`
+	ID       string          `json:"id"`
+	DocsDir  string          `json:"docs_dir"`
+	DocsDirs []statusDocsDir `json:"docs_dirs"`
+}
+
+// statusDocsDir mirrors one configured mapping: the local directory and the
+// remote prefix it syncs to ("" is the project root).
+type statusDocsDir struct {
+	Path   string `json:"path"`
+	Prefix string `json:"prefix"`
 }
 
 type statusRemote struct {
@@ -175,7 +184,7 @@ type statusDoc struct {
 func statusDocument(res *app.StatusResult, err error) statusDoc {
 	doc := statusDoc{
 		Envelope: envelope("status", err),
-		Project:  statusProject{ID: res.ProjectID, DocsDir: res.DocsDir},
+		Project:  statusProject{ID: res.ProjectID, DocsDir: res.DocsDir, DocsDirs: statusDocsDirs(res.DocsDirs)},
 		Remote: statusRemote{
 			URL:               res.Remote,
 			Branch:            res.Branch,
@@ -196,6 +205,14 @@ func statusDocument(res *app.StatusResult, err error) statusDoc {
 		doc.Files = []statusFile{}
 	}
 	return doc
+}
+
+func statusDocsDirs(mappings []config.DocsMapping) []statusDocsDir {
+	dirs := make([]statusDocsDir, 0, len(mappings))
+	for _, m := range mappings {
+		dirs = append(dirs, statusDocsDir{Path: m.Path, Prefix: m.Prefix})
+	}
+	return dirs
 }
 
 func statusFiles(actions []trees.Action) []statusFile {

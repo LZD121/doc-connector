@@ -25,9 +25,21 @@ func ExcludePath(commonDir string) string {
 // ExcludeBlock renders the managed block for docsDir (slash-separated, anchored
 // at the worktree root, spaces escaped).
 func ExcludeBlock(docsDir string) string {
-	p := strings.Trim(filepath.ToSlash(docsDir), "/")
-	p = strings.ReplaceAll(p, " ", `\ `)
-	return fmt.Sprintf("%s\n/%s/\n%s\n", ExcludeBegin, p, ExcludeEnd)
+	return ExcludeBlockDirs([]string{docsDir})
+}
+
+// ExcludeBlockDirs renders one managed block covering every mapped docs
+// directory: one anchored pattern per directory, in the given order.
+func ExcludeBlockDirs(docsDirs []string) string {
+	var b strings.Builder
+	b.WriteString(ExcludeBegin + "\n")
+	for _, dir := range docsDirs {
+		p := strings.Trim(filepath.ToSlash(dir), "/")
+		p = strings.ReplaceAll(p, " ", `\ `)
+		fmt.Fprintf(&b, "/%s/\n", p)
+	}
+	b.WriteString(ExcludeEnd + "\n")
+	return b.String()
 }
 
 // EnsureExclude makes the exclude file contain exactly one managed block for
@@ -36,11 +48,17 @@ func ExcludeBlock(docsDir string) string {
 // The function never touches .gitignore: sharing a team repository means the
 // only writable ignore source is the local, untracked info/exclude.
 func EnsureExclude(excludePath, docsDir string) (bool, error) {
+	return EnsureExcludeDirs(excludePath, []string{docsDir})
+}
+
+// EnsureExcludeDirs is EnsureExclude for a multi-directory project: the block
+// lists every mapped directory so each one is hidden from the team repository.
+func EnsureExcludeDirs(excludePath string, docsDirs []string) (bool, error) {
 	original, mode, err := readExclude(excludePath)
 	if err != nil {
 		return false, err
 	}
-	block := ExcludeBlock(docsDir)
+	block := ExcludeBlockDirs(docsDirs)
 
 	content := original
 	begin := strings.Index(content, ExcludeBegin)

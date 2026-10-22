@@ -186,7 +186,7 @@ func TestStatusUnreachableRemote(t *testing.T) {
 	rc.Close()
 
 	env := Env{Cwd: repo, Stdout: io.Discard, Stderr: io.Discard}
-	res, err := Status(context.Background(), env, false)
+	res, err := Status(context.Background(), env, StatusOptions{})
 	if res == nil {
 		t.Fatalf("Status returned no result: %v", err)
 	}

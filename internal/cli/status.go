@@ -14,6 +14,7 @@ func cmdStatus(ctx context.Context, e *runnerEnv, args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	offline := fs.Bool("offline", false, "do not fetch the remote")
+	follow := fs.Bool("follow-symlinks", false, "synchronize symlink targets as regular files")
 	jsonOut := fs.Bool("json", false, "print one JSON document")
 
 	helped, err := parseFlags(fs, args, e.Stdout, statusUsage)
@@ -27,7 +28,8 @@ func cmdStatus(ctx context.Context, e *runnerEnv, args []string) error {
 		return err
 	}
 
-	res, serr := app.Status(ctx, app.Env{Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr}, *offline)
+	res, serr := app.Status(ctx, app.Env{Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr},
+		app.StatusOptions{Offline: *offline, FollowSymlinks: *follow})
 	if res == nil {
 		return Wrap(serr, CodeConflict)
 	}

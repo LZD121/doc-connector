@@ -151,12 +151,21 @@ func cmdInit(ctx context.Context, e *runnerEnv, args []string) error {
 		return Wrap(err, 1)
 	}
 
-	// Hide the docs directory, then prove the isolation invariant.
+	// Hide every mapped docs directory, then prove the isolation invariant.
+	// Re-running init on a multi-directory config must keep the other mappings:
+	// dropping them from the managed block would un-hide those directories.
+	docsPaths := []string{docsRel}
+	if !explicitFlags["docs-dir"] && existing != nil && len(existing.DocsDirs) > 0 {
+		docsPaths = docsPaths[:0]
+		for _, m := range existing.DocsDirs {
+			docsPaths = append(docsPaths, m.Path)
+		}
+	}
 	excludePath := project.ExcludePath(repo.CommonDir)
-	if _, err := project.EnsureExclude(excludePath, docsRel); err != nil {
+	if _, err := project.EnsureExcludeDirs(excludePath, docsPaths); err != nil {
 		return Wrap(err, CodeGuard)
 	}
-	if err := project.GuardAll(ctx, work, docsRel, excludePath); err != nil {
+	if err := project.GuardAllDirs(ctx, work, docsPaths, excludePath); err != nil {
 		return Wrap(err, CodeGuard)
 	}
 
@@ -167,6 +176,7 @@ func cmdInit(ctx context.Context, e *runnerEnv, args []string) error {
 		Remote:    remoteURL,
 		Branch:    branchName,
 		DocsDir:   docsRel,
+		DocsDirs:  []config.DocsMapping{{Path: docsRel}},
 		Machine:   name,
 		Project:   config.Project{ID: id.ID, IDSource: id.Source, RootCommit: id.RootCommit, ObjectFormat: id.ObjectFormat, Adoption: "none"},
 		Limits:    config.DefaultLimits(),
@@ -183,6 +193,7 @@ func cmdInit(ctx context.Context, e *runnerEnv, args []string) error {
 		cfg.Project.Adoption = existing.Project.Adoption
 		if !explicitFlags["docs-dir"] {
 			cfg.DocsDir = existing.DocsDir
+			cfg.DocsDirs = existing.DocsDirs
 		}
 		if !explicitFlags["branch"] {
 			cfg.Branch = existing.Branch

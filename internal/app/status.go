@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/LZD121/doc-connector/internal/config"
 	"github.com/LZD121/doc-connector/internal/state"
 	"github.com/LZD121/doc-connector/internal/trees"
 )
@@ -23,6 +24,7 @@ type StatusResult struct {
 	// Facts echoed by the JSON document; the human renderer does not use them.
 	ProjectID         string
 	DocsDir           string
+	DocsDirs          []config.DocsMapping
 	Remote            string
 	Branch            string
 	BaseCommit        string
@@ -30,12 +32,18 @@ type StatusResult struct {
 	FetchedAgeSeconds int64
 }
 
+// StatusOptions controls one status report.
+type StatusOptions struct {
+	Offline        bool
+	FollowSymlinks bool
+}
+
 // Status compares baseline, local and remote. It never writes state.json.
 //
 // When the remote cannot be reached the report is still produced from local
 // facts and the cache; the returned error carries exit code 4 so the caller can
 // print the report first and then exit non-zero.
-func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
+func Status(ctx context.Context, env Env, opts StatusOptions) (*StatusResult, error) {
 	rc, err := Load(ctx, env, LoadOptions{CreateDocs: false})
 	if err != nil {
 		return nil, err
@@ -44,7 +52,7 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 
 	// status is read-only: it reports instead of refusing on size, and the
 	// classification below wins the case/NFC check.
-	local, err := rc.ScanLocal(ctx, ScanPolicy{})
+	local, err := rc.ScanLocal(ctx, ScanPolicy{FollowSymlinks: opts.FollowSymlinks})
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +64,7 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 		Fetched:    fetched,
 		ProjectID:  rc.Config.Project.ID,
 		DocsDir:    rc.Config.DocsDir,
+		DocsDirs:   append([]config.DocsMapping{}, rc.Config.DocsDirs...),
 		Remote:     rc.Config.Remote,
 		Branch:     rc.Config.Branch,
 		BaseCommit: rc.State.SyncedCommit,
@@ -63,7 +72,7 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 	}
 
 	tip := fetched.Commit
-	if !offline {
+	if !opts.Offline {
 		got, ferr := rc.Fetch(ctx, "status")
 		if ferr != nil {
 			res.FetchError = ferr

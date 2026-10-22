@@ -20,9 +20,16 @@ func recoverJournal(ctx context.Context, rc *RepoContext) error {
 	if j == nil {
 		return nil
 	}
-	if rc.Root == nil {
-		return errf(codeGuard, "journal exists but the docs directory is missing").
-			withHint("restore the docs directory to its configured path, or inspect the journal and remove it if that pull is no longer wanted")
+	rootMissing := false
+	for _, e := range rc.Docs {
+		if e.Root == nil {
+			rootMissing = true
+			break
+		}
+	}
+	if rootMissing {
+		return errf(codeGuard, "journal exists but a docs directory is missing").
+			withHint("restore the docs directories to their configured paths, or inspect the journal and remove it if that pull is no longer wanted")
 	}
 
 	for _, op := range j.Ops {
@@ -35,6 +42,10 @@ func recoverJournal(ctx context.Context, rc *RepoContext) error {
 			if target == "" || op.Staged == "" {
 				continue
 			}
+			entry, rel, rerr := rc.resolveProjectPath(target)
+			if rerr != nil {
+				return rerr
+			}
 			if _, statErr := os.Stat(op.Staged); statErr != nil {
 				if errors.Is(statErr, os.ErrNotExist) {
 					continue
@@ -43,11 +54,15 @@ func recoverJournal(ctx context.Context, rc *RepoContext) error {
 					withHint("the staged blob is gone; inspect the journal and re-run pull to rebuild it")
 			}
 			mode := parseGitMode(op.Mode)
-			if err := writeAtomicFromPath(rc.Root, target, op.Staged, mode); err != nil {
+			if err := writeAtomicFromPath(entry.Root, rel, op.Staged, mode); err != nil {
 				return wrapErr(err, 1)
 			}
 		case "delete":
-			abs := filepath.Join(rc.DocsDir, filepath.FromSlash(op.Path))
+			entry, rel, rerr := rc.resolveProjectPath(op.Path)
+			if rerr != nil {
+				return rerr
+			}
+			abs := filepath.Join(entry.Abs, filepath.FromSlash(rel))
 			if _, statErr := os.Lstat(abs); statErr != nil {
 				if errors.Is(statErr, os.ErrNotExist) {
 					continue

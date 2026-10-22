@@ -105,6 +105,8 @@ func dispatch(ctx context.Context, e *runnerEnv, args []string) (int, error) {
 		return CodeOK, cmdLog(ctx, e, rest)
 	case "restore":
 		return CodeOK, cmdRestore(ctx, e, rest)
+	case "diff":
+		return CodeOK, cmdDiff(ctx, e, rest)
 	case "doctor":
 		return CodeOK, cmdDoctor(ctx, e, rest)
 	default:
