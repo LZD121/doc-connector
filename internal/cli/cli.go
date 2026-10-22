@@ -86,11 +86,11 @@ func dispatch(ctx context.Context, e *runnerEnv, args []string) (int, error) {
 	case "init":
 		return CodeOK, cmdInit(ctx, e, rest)
 	case "status":
-		return CodeOK, stub(e, name, rest)
+		return CodeOK, cmdStatus(ctx, e, rest)
 	case "push":
 		return CodeOK, stub(e, name, rest)
 	case "pull":
-		return CodeOK, stub(e, name, rest)
+		return CodeOK, cmdPull(ctx, e, rest)
 	case "log":
 		return CodeOK, stub(e, name, rest)
 	case "restore":

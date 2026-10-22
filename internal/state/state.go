@@ -63,6 +63,7 @@ type Journal struct {
 	RemoteCommit string      `json:"remote_commit,omitempty"`
 	Ops          []JournalOp `json:"ops"`
 	StateNext    string      `json:"state_next,omitempty"`
+	TmpDir       string      `json:"tmp_dir,omitempty"`
 }
 
 // Dir returns <git-dir>/doc-connector.

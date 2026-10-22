@@ -18,10 +18,10 @@
 
 ### 状态与三方比较
 
-- [ ] **SYNC-01**: `status` 逐文件显示 unchanged / local-only / remote-only / both-changed / deleted 变体，并汇总 clean、ahead、behind、diverged
-- [ ] **SYNC-02**: 比较依据 git blob OID（内容哈希）；修改 mtime 或复制文件不产生假差异，同尺寸修改不会被漏报
-- [ ] **SYNC-03**: 远端不可达时，`status` 仍报告本地与基线的状态，并明确标注“远端未检查”（退出 4）
-- [ ] **SYNC-04**: status、push、pull 共用同一个三方分类实现；同一工作区状态下三者结论必须一致
+- [x] **SYNC-01**: `status` 逐文件显示 unchanged / local-only / remote-only / both-changed / deleted 变体，并汇总 clean、ahead、behind、diverged
+- [x] **SYNC-02**: 比较依据 git blob OID（内容哈希）；修改 mtime 或复制文件不产生假差异，同尺寸修改不会被漏报
+- [x] **SYNC-03**: 远端不可达时，`status` 仍报告本地与基线的状态，并明确标注“远端未检查”（退出 4）
+- [x] **SYNC-04**: status、push、pull 共用同一个三方分类实现；同一工作区状态下三者结论必须一致
 - [ ] **SYNC-05**: `push --dry-run` 与 `pull --dry-run` 输出将执行的动作，不写工作区、不写状态、不写远端
 - [ ] **SYNC-06**: 检测到 diverged（同一路径双方都改）时，push/pull 默认拒绝并退出 1，除非用户显式解决冲突
 
@@ -36,12 +36,12 @@
 
 ### 拉取
 
-- [ ] **PULL-01**: `pull` fetch 远端并把新增、修改、删除安全应用到文档目录；目录外的任何文件保持不变
-- [ ] **PULL-02**: 所有写操作先写临时文件、fsync、再原子 rename；中途失败可依据 journal 恢复到一致状态
+- [x] **PULL-01**: `pull` fetch 远端并把新增、修改、删除安全应用到文档目录；目录外的任何文件保持不变
+- [x] **PULL-02**: 所有写操作先写临时文件、fsync、再原子 rename；中途失败可依据 journal 恢复到一致状态
 - [ ] **PULL-03**: 拉取前若本地存在与远端不同的同名文件（首次 pull 或基线缺失），保留本地并写 `<name>.theirs.<machine>`，退出 1
-- [ ] **PULL-04**: pull 不删除“本地存在但基线中没有”的文件；删除仅对“基线存在、远端删除、本地未改”的路径生效
-- [ ] **PULL-05**: pull 成功后推进基线；任何部分失败都不推进基线，并报告已应用与未应用的文件
-- [ ] **PULL-06**: 远端树中的绝对路径、`..`、符号链接、Windows 保留名或超长路径被拒绝；整次操作失败且不写入任何文件
+- [x] **PULL-04**: pull 不删除“本地存在但基线中没有”的文件；删除仅对“基线存在、远端删除、本地未改”的路径生效
+- [x] **PULL-05**: pull 成功后推进基线；任何部分失败都不推进基线，并报告已应用与未应用的文件
+- [x] **PULL-06**: 远端树中的绝对路径、`..`、符号链接、Windows 保留名或超长路径被拒绝；整次操作失败且不写入任何文件
 
 ### 冲突解决
 
@@ -65,7 +65,7 @@
 - [x] **GUARD-04**: 所有文档读写限制在文档目录内（`os.Root` 语义），拒绝路径穿越与符号链接
 - [ ] **GUARD-05**: 检测大小写碰撞与 Unicode NFC/NFD 归一化冲突；冲突时拒绝整次操作并列出冲突路径
 - [x] **GUARD-06**: 跨进程锁保证同一 project/store 同时只有一个写操作；锁竞争等待有限时间后退出 3
-- [ ] **GUARD-07**: 文件替换失败时保留临时文件并报错，绝不回退为原地截断写
+- [x] **GUARD-07**: 文件替换失败时保留临时文件并报错，绝不回退为原地截断写
 - [ ] **GUARD-08**: 单文件超过 100MB 时拒绝同步（GitHub 硬限制）；超过 50MB 时警告但在 `--force` 下继续
 
 ### CLI 契约
@@ -132,24 +132,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INIT-06 | Phase 2 | Complete |
 | INIT-07 | Phase 2 | Complete |
 | INIT-08 | Phase 2 | Complete |
-| SYNC-01 | Phase 3 | Pending |
-| SYNC-02 | Phase 3 | Pending |
-| SYNC-03 | Phase 3 | Pending |
-| SYNC-04 | Phase 3 | Pending |
+| SYNC-01 | Phase 3 | Complete |
+| SYNC-02 | Phase 3 | Complete |
+| SYNC-03 | Phase 3 | Complete |
+| SYNC-04 | Phase 3 | Complete |
 | SYNC-05 | Phase 4 | Pending |
-| SYNC-06 | Phase 3 | Pending |
+| SYNC-06 | Phase 3 | In progress (pull gate done; push gate in Phase 4) |
 | PUSH-01 | Phase 4 | Pending |
 | PUSH-02 | Phase 4 | Pending |
 | PUSH-03 | Phase 4 | Pending |
 | PUSH-04 | Phase 4 | Pending |
 | PUSH-05 | Phase 4 | Pending |
 | PUSH-06 | Phase 4 | Pending |
-| PULL-01 | Phase 3 | Pending |
-| PULL-02 | Phase 3 | Pending |
+| PULL-01 | Phase 3 | Complete |
+| PULL-02 | Phase 3 | Complete |
 | PULL-03 | Phase 4 | Pending |
-| PULL-04 | Phase 3 | Pending |
-| PULL-05 | Phase 3 | Pending |
-| PULL-06 | Phase 3 | Pending |
+| PULL-04 | Phase 3 | Complete |
+| PULL-05 | Phase 3 | Complete |
+| PULL-06 | Phase 3 | Complete |
 | CONF-01 | Phase 4 | Pending |
 | CONF-02 | Phase 4 | Pending |
 | CONF-03 | Phase 4 | Pending |
@@ -164,7 +164,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GUARD-04 | Phase 2 | Complete |
 | GUARD-05 | Phase 5 | Pending |
 | GUARD-06 | Phase 1 | Complete |
-| GUARD-07 | Phase 3 | Pending |
+| GUARD-07 | Phase 3 | Complete |
 | GUARD-08 | Phase 5 | Pending |
 | CLI-01 | Phase 1 | Complete |
 | CLI-02 | Phase 1 | Complete |

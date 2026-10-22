@@ -8,6 +8,7 @@ package fsx
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -58,6 +59,9 @@ func (r *Root) Close() error { return r.root.Close() }
 
 // Dir returns the absolute docs directory.
 func (r *Root) Dir() string { return r.dir }
+
+// FS returns the root as an fs.FS for fs.WalkDir.
+func (r *Root) FS() fs.FS { return r.root.FS() }
 
 // Check validates a relative path before it reaches the OS.
 func (r *Root) Check(rel string) error {
@@ -159,6 +163,8 @@ func (r *Root) Stat(rel string) (os.FileInfo, error) {
 	return info, nil
 }
 
+// wrap keeps ordinary I/O failures as plain errors so the application layer
+// maps them to exit 1. Exit 3 is reserved for path-safety violations.
 func wrap(rel string, err error) error {
 	if err == nil {
 		return nil
@@ -166,5 +172,5 @@ func wrap(rel string, err error) error {
 	if errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return &Error{Msg: fmt.Sprintf("docs path %q: %v", rel, err), Err: err}
+	return fmt.Errorf("docs path %q: %w", rel, err)
 }
