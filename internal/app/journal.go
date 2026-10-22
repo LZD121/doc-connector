@@ -21,7 +21,8 @@ func recoverJournal(ctx context.Context, rc *RepoContext) error {
 		return nil
 	}
 	if rc.Root == nil {
-		return errf(codeGuard, "journal exists but the docs directory is missing")
+		return errf(codeGuard, "journal exists but the docs directory is missing").
+			withHint("restore the docs directory to its configured path, or inspect the journal and remove it if that pull is no longer wanted")
 	}
 
 	for _, op := range j.Ops {
@@ -38,7 +39,8 @@ func recoverJournal(ctx context.Context, rc *RepoContext) error {
 				if errors.Is(statErr, os.ErrNotExist) {
 					continue
 				}
-				return errf(1, "recovery: cannot read staged file %q: %v", op.Staged, statErr)
+				return errf(1, "recovery: cannot read staged file %q: %v", op.Staged, statErr).
+					withHint("the staged blob is gone; inspect the journal and re-run pull to rebuild it")
 			}
 			mode := parseGitMode(op.Mode)
 			if err := writeAtomicFromPath(rc.Root, target, op.Staged, mode); err != nil {
@@ -50,11 +52,13 @@ func recoverJournal(ctx context.Context, rc *RepoContext) error {
 				if errors.Is(statErr, os.ErrNotExist) {
 					continue
 				}
-				return errf(1, "recovery: cannot inspect %q: %v", op.Path, statErr)
+				return errf(1, "recovery: cannot inspect %q: %v", op.Path, statErr).
+					withHint("inspect that path manually; recovery will not overwrite a file it cannot read")
 			}
 			trash := op.Staged
 			if trash == "" {
-				return errf(1, "recovery: delete of %q has no trash path", op.Path)
+				return errf(1, "recovery: delete of %q has no trash path", op.Path).
+					withHint("the journal is inconsistent; remove the journal file and re-run pull")
 			}
 			if err := moveToTrash(abs, trash); err != nil {
 				return wrapErr(err, 1)

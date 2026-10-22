@@ -14,6 +14,7 @@ func cmdStatus(ctx context.Context, e *runnerEnv, args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	offline := fs.Bool("offline", false, "do not fetch the remote")
+	jsonOut := fs.Bool("json", false, "print one JSON document")
 
 	helped, err := parseFlags(fs, args, e.Stdout, statusUsage)
 	if err != nil {
@@ -29,6 +30,16 @@ func cmdStatus(ctx context.Context, e *runnerEnv, args []string) error {
 	res, serr := app.Status(ctx, app.Env{Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr}, *offline)
 	if res == nil {
 		return Wrap(serr, CodeConflict)
+	}
+
+	if *jsonOut {
+		if err := e.emit(statusDocument(res, serr)); err != nil {
+			return err
+		}
+		if serr != nil {
+			return Wrap(serr, CodeRemote)
+		}
+		return nil
 	}
 
 	fmt.Fprintf(e.Stdout, "status: %s\n", res.Summary.String())

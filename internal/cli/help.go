@@ -12,6 +12,7 @@ Commands:
   pull      Apply remote changes to the local docs directory
   log       Show sync history from the local mirror (offline)
   restore   Write a historical version of a path back to the docs directory
+  doctor    Diagnose the repository, exclude block, lock and remote (read-only)
 
 Flags:
   -h, --help     Show this help
@@ -26,6 +27,18 @@ Exit codes:
   130 interrupted
 
 Run "doc-connector <command> --help" for command flags.
+`
+
+const doctorUsage = `Usage:
+  doc-connector doctor [flags]
+
+Diagnoses one initialized repository without changing it: git version, exclude
+block and its source, tracked docs, config/state identity, lock holder, remote
+tip in the local mirror, and leftover temporary or conflict artifacts.
+
+Flags:
+      --json     Print one JSON document
+  -h, --help     Show this help
 `
 
 const initUsage = `Usage:
@@ -52,6 +65,7 @@ Reports clean/ahead/behind/diverged plus per-file three-way state. Read-only.
 
 Flags:
       --offline   Do not fetch the remote; report the cached remote tip
+      --json      Print one JSON document
   -h, --help      Show this help
 `
 
@@ -66,6 +80,7 @@ Flags:
       --resolve <path>     Accept the local version for an unresolved conflict (repeatable)
       --force              Allow files above the 50 MiB warning limit
       --allow-large        Allow files above the 100 MiB hard limit
+      --json               Print one JSON document
   -h, --help               Show this help
 `
 
@@ -79,6 +94,7 @@ Flags:
       --dry-run     Print the plan without writing
       --force       Allow files above the 50 MiB warning limit
       --allow-large Allow files above the 100 MiB hard limit
+      --json        Print one JSON document
   -h, --help        Show this help
 `
 

@@ -24,6 +24,9 @@ type Env struct {
 
 type runnerEnv struct {
 	Env
+	// wroteDoc records that a JSON document already reached stdout, so the
+	// fallback in Run never writes a second one.
+	wroteDoc bool
 }
 
 // Run parses argv, dispatches one command and returns the process exit code.
@@ -43,7 +46,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		env.Cwd = cwd
 	}
 
-	code, err := dispatch(ctx, &runnerEnv{env}, args)
+	re := &runnerEnv{Env: env}
+	code, err := dispatch(ctx, re, args)
 	if err != nil {
 		var ce *Error
 		if errors.As(err, &ce) {
@@ -56,10 +60,16 @@ func Run(ctx context.Context, args []string, env Env) int {
 			fmt.Fprintf(env.Stderr, "doc-connector: %v\n", err)
 			code = CodeConflict
 		}
+		if jsonRequested(args[1:]) && !re.wroteDoc {
+			writeErrorDoc(env.Stdout, commandName(args), err)
+		}
 	}
 
 	if ctx.Err() != nil {
 		fmt.Fprintln(env.Stderr, "doc-connector: interrupted")
+		if jsonRequested(args[1:]) && !re.wroteDoc {
+			writeErrorDoc(env.Stdout, commandName(args), Errorf(CodeInterrupted, "interrupted"))
+		}
 		return CodeInterrupted
 	}
 	return code
@@ -95,6 +105,8 @@ func dispatch(ctx context.Context, e *runnerEnv, args []string) (int, error) {
 		return CodeOK, cmdLog(ctx, e, rest)
 	case "restore":
 		return CodeOK, cmdRestore(ctx, e, rest)
+	case "doctor":
+		return CodeOK, cmdDoctor(ctx, e, rest)
 	default:
 		if strings.HasPrefix(name, "-") {
 			return CodeUsage, Errorf(CodeUsage, "unknown flag %q", name).

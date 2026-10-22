@@ -118,7 +118,8 @@ func Load(ctx context.Context, env Env, opts LoadOptions) (*RepoContext, error) 
 	docsDir := filepath.Join(repo.WorkTree, filepath.FromSlash(cfg.DocsDir))
 	if opts.CreateDocs {
 		if err := os.MkdirAll(docsDir, 0o700); err != nil {
-			return nil, errf(1, "cannot create docs directory %q: %v", docsDir, err)
+			return nil, errf(1, "cannot create docs directory %q: %v", docsDir, err).
+				withHint("check the parent directory permissions and free space, then retry")
 		}
 	}
 	var root *fsx.Root
@@ -230,19 +231,32 @@ func shortOID(oid string) string {
 	return oid
 }
 
+// FetchedAgeSeconds is the age of the fetch cache in whole seconds, or 0 when
+// there is no usable timestamp. It is the machine-readable form of FetchedAge.
+func FetchedAgeSeconds(f state.Fetched) int64 {
+	if f.At == "" {
+		return 0
+	}
+	at, err := time.Parse(time.RFC3339, f.At)
+	if err != nil {
+		return 0
+	}
+	d := time.Since(at)
+	if d < 0 {
+		return 0
+	}
+	return int64(d.Seconds())
+}
+
 // FetchedAge renders the cache age, or "" when unknown.
 func FetchedAge(f state.Fetched) string {
 	if f.At == "" {
 		return ""
 	}
-	at, err := time.Parse(time.RFC3339, f.At)
-	if err != nil {
+	if _, err := time.Parse(time.RFC3339, f.At); err != nil {
 		return ""
 	}
-	d := time.Since(at)
-	if d < 0 {
-		d = 0
-	}
+	d := time.Duration(FetchedAgeSeconds(f)) * time.Second
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds ago", int(d.Seconds()))

@@ -25,6 +25,7 @@ func cmdPush(ctx context.Context, e *runnerEnv, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print the plan without writing")
 	allowLarge := fs.Bool("allow-large", false, "allow files above the hard size limit")
 	force := fs.Bool("force", false, "allow files above the warning size")
+	jsonOut := fs.Bool("json", false, "print one JSON document")
 	var resolve stringList
 	fs.Var(&resolve, "resolve", "accept the local version for an unresolved path (repeatable)")
 
@@ -44,6 +45,15 @@ func cmdPush(ctx context.Context, e *runnerEnv, args []string) error {
 	}, app.PushOptions{DryRun: *dryRun, Resolve: resolve, AllowLarge: *allowLarge, Force: *force})
 	if res == nil {
 		return Wrap(perr, CodeConflict)
+	}
+	if *jsonOut {
+		if err := e.emit(pushDocument(res, perr)); err != nil {
+			return err
+		}
+		if perr != nil {
+			return Wrap(perr, CodeConflict)
+		}
+		return nil
 	}
 	counts := fmt.Sprintf("+%d ~%d -%d (%d tracked)", res.Added, res.Modified, res.Deleted, res.Tracked)
 	switch {

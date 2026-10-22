@@ -19,6 +19,15 @@ type StatusResult struct {
 	RemoteChecked bool
 	Fetched       state.Fetched
 	FetchError    error
+
+	// Facts echoed by the JSON document; the human renderer does not use them.
+	ProjectID         string
+	DocsDir           string
+	Remote            string
+	Branch            string
+	BaseCommit        string
+	BaseTree          string
+	FetchedAgeSeconds int64
 }
 
 // Status compares baseline, local and remote. It never writes state.json.
@@ -41,7 +50,17 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 	}
 
 	fetched := state.LoadFetched(rc.Repo.GitDir)
-	res := &StatusResult{Ignored: local.Ignored, Skipped: local.Skipped, Fetched: fetched}
+	res := &StatusResult{
+		Ignored:    local.Ignored,
+		Skipped:    local.Skipped,
+		Fetched:    fetched,
+		ProjectID:  rc.Config.Project.ID,
+		DocsDir:    rc.Config.DocsDir,
+		Remote:     rc.Config.Remote,
+		Branch:     rc.Config.Branch,
+		BaseCommit: rc.State.SyncedCommit,
+		BaseTree:   rc.State.BaselineTree,
+	}
 
 	tip := fetched.Commit
 	if !offline {
@@ -69,6 +88,7 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 		localTree = trees.NormalizeModes(localTree, base, remote)
 	}
 	res.Actions, res.Summary = trees.Classify(base, localTree, remote)
+	res.FetchedAgeSeconds = FetchedAgeSeconds(res.Fetched)
 
 	if res.FetchError != nil {
 		return res, &Error{

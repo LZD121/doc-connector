@@ -174,3 +174,64 @@ func TestLockContention(t *testing.T) {
 		t.Errorf("lock file removed: %v", err)
 	}
 }
+
+func TestProbe(t *testing.T) {
+	ctx := context.Background()
+	gitDir := t.TempDir()
+
+	if h, found, err := Probe(gitDir); found || err != nil || h != (Holder{}) {
+		t.Fatalf("absent lock = %+v, found=%v, err=%v", h, found, err)
+	}
+
+	if err := os.MkdirAll(Dir(gitDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := Path(gitDir, "lock")
+	if err := os.WriteFile(lockPath, []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if h, found, err := Probe(gitDir); found || err != nil {
+		t.Errorf("empty lock = %+v, found=%v, err=%v; want not found", h, found, err)
+	}
+
+	if err := os.WriteFile(lockPath, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if h, found, err := Probe(gitDir); !found || err == nil || h != (Holder{}) {
+		t.Errorf("malformed lock = %+v, found=%v, err=%v; want the zero Holder, found and an error", h, found, err)
+	}
+
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	held, err := Acquire(ctx, gitDir, "pull", "laptop")
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	holder, found, err := Probe(gitDir)
+	if err != nil || !found {
+		t.Fatalf("probe while held = %+v, found=%v, err=%v", holder, found, err)
+	}
+	if holder.PID != os.Getpid() || holder.Cmd != "pull" || holder.Machine != "laptop" || holder.Schema != SchemaVersion {
+		t.Errorf("holder = %+v", holder)
+	}
+	if holder.StartedAt == "" {
+		t.Error("holder has no started_at")
+	}
+
+	// Probing must leave the holder untouched: release still works and the lock
+	// can be taken again immediately.
+	if err := held.Release(); err != nil {
+		t.Fatalf("release after probe: %v", err)
+	}
+	again, err := Acquire(ctx, gitDir, "push", "laptop")
+	if err != nil {
+		t.Fatalf("acquire after release: %v", err)
+	}
+	if err := again.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if stale, found, err := Probe(gitDir); err != nil || !found || stale.Cmd != "push" {
+		t.Errorf("record after release = %+v, found=%v, err=%v", stale, found, err)
+	}
+}

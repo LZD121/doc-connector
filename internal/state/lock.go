@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,12 +23,38 @@ type Lock struct {
 	file *flock.Flock
 }
 
-type lockInfo struct {
+// Holder is the diagnostic record written into the lock file: who holds (or
+// last held) the project lock. The lock itself is the flock; this is a note.
+type Holder struct {
 	Schema    int    `json:"schema"`
 	PID       int    `json:"pid"`
 	Machine   string `json:"machine"`
 	Cmd       string `json:"cmd"`
 	StartedAt string `json:"started_at"`
+}
+
+// Probe reads the lock record without taking the lock, so it is safe while
+// another process works. found is false when the file is absent or empty; a
+// malformed file is reported as found with the zero Holder and an error the
+// caller may ignore. found=true does not prove a live holder: the file is
+// deliberately left behind after Release, so a stale record also reports found.
+func Probe(gitDir string) (Holder, bool, error) {
+	path := filepath.Join(Dir(gitDir), "lock")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Holder{}, false, nil
+		}
+		return Holder{}, false, err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return Holder{}, false, nil
+	}
+	var h Holder
+	if err := json.Unmarshal(data, &h); err != nil {
+		return Holder{}, true, err
+	}
+	return h, true, nil
 }
 
 // Acquire takes the exclusive lock at <git-dir>/doc-connector/lock, polling
@@ -49,7 +76,7 @@ func Acquire(ctx context.Context, gitDir, cmd, machine string) (*Lock, error) {
 		return nil, lockedError(path)
 	}
 
-	info := lockInfo{
+	info := Holder{
 		Schema:    SchemaVersion,
 		PID:       os.Getpid(),
 		Machine:   machine,
@@ -66,7 +93,7 @@ func Acquire(ctx context.Context, gitDir, cmd, machine string) (*Lock, error) {
 func lockedError(path string) error {
 	holder := ""
 	if data, err := os.ReadFile(path); err == nil {
-		var info lockInfo
+		var info Holder
 		if json.Unmarshal(data, &info) == nil && info.PID != 0 {
 			holder = fmt.Sprintf(" (held by pid %d on %s, command %q)", info.PID, info.Machine, info.Cmd)
 		}

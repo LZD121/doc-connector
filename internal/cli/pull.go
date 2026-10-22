@@ -15,6 +15,7 @@ func cmdPull(ctx context.Context, e *runnerEnv, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print the plan without writing")
 	force := fs.Bool("force", false, "allow files above the warning size")
 	allowLarge := fs.Bool("allow-large", false, "allow files above the hard size limit")
+	jsonOut := fs.Bool("json", false, "print one JSON document")
 
 	helped, err := parseFlags(fs, args, e.Stdout, pullUsage)
 	if err != nil {
@@ -31,6 +32,16 @@ func cmdPull(ctx context.Context, e *runnerEnv, args []string) error {
 		app.PullOptions{DryRun: *dryRun, Force: *force, AllowLarge: *allowLarge})
 	if res == nil {
 		return Wrap(perr, CodeConflict)
+	}
+
+	if *jsonOut {
+		if err := e.emit(pullDocument(res, perr)); err != nil {
+			return err
+		}
+		if perr != nil {
+			return Wrap(perr, CodeConflict)
+		}
+		return nil
 	}
 
 	if res.DryRun {

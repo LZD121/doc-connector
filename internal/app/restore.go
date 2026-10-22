@@ -61,7 +61,8 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 	}
 	commit, cerr := rc.Store.Run(ctx, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 	if cerr != nil {
-		return nil, errf(codeUsage, "unknown revision %q", rev)
+		return nil, errf(codeUsage, "unknown revision %q", rev).
+			withHint("list commits with \"doc-connector log\" and pass a revision shown there")
 	}
 	commit = strings.TrimSpace(commit)
 
@@ -84,7 +85,8 @@ func Restore(ctx context.Context, env Env, opts RestoreOptions) (*RestoreResult,
 		return res, nil
 	}
 	if rc.Root == nil {
-		return nil, errf(codeGuard, "docs directory is missing")
+		return nil, errf(codeGuard, "docs directory is missing").
+			withHint("re-create the configured docs directory, then retry")
 	}
 
 	if _, statErr := rc.Root.Lstat(opts.Path); statErr == nil && !opts.Force {
@@ -163,7 +165,8 @@ func blobAt(ctx context.Context, rc *RepoContext, commit, rel string) (string, s
 		spec = commit + ":" + prefix
 		out, err = rc.Store.Run(ctx, "rev-parse", "--verify", "--quiet", spec)
 		if err != nil {
-			return "", "", errf(codeUsage, "path %q could not be read from %s", rel, shortOID(commit))
+			return "", "", errf(codeUsage, "path %q could not be read from %s", rel, shortOID(commit)).
+				withHint("confirm the path still exists at that commit with \"doc-connector log --path %s\"", rel)
 		}
 	}
 	oid := strings.TrimSpace(out)
@@ -172,7 +175,8 @@ func blobAt(ctx context.Context, rc *RepoContext, commit, rel string) (string, s
 		return "", "", wrapErr(terr, 1)
 	}
 	if strings.TrimSpace(kind) != "blob" {
-		return "", "", errf(codeGuard, "path %q is not a file at %s", rel, shortOID(commit))
+		return "", "", errf(codeGuard, "path %q is not a file at %s", rel, shortOID(commit)).
+			withHint("restore reads plain files only; directories and symlinks cannot be restored")
 	}
 
 	mode := "100644"
