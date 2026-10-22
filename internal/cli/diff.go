@@ -15,8 +15,8 @@ const diffUsage = `Usage:
   doc-connector diff --from <commit> [path] [flags]
 
 Shows how one historical version of this project's prefix differs from the
-currently synced revision. Reads the local mirror only: never fetches, never
-writes state.
+local docs tree, including edits that were not pushed yet. Reads the local
+mirror and the docs directories only: never fetches, never writes state.
 
 Flags:
       --from <commit>  Revision to compare from (default: the remote tip)

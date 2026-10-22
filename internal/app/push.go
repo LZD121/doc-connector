@@ -159,6 +159,9 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		return nil, wrapErr(err, 1)
 	}
 	indexPath := filepath.Join(state.TmpDir(rc.Repo.GitDir), "idx-push-"+randomSuffix())
+	// The temp index is scratch space; leaving it behind made `doctor` report a
+	// leftover after every push.
+	defer func() { _ = os.Remove(indexPath) }()
 
 	subtree, err := rc.Store.BuildSubtree(ctx, entries, indexPath, opts.DryRun)
 	if err != nil {

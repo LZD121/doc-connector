@@ -154,6 +154,132 @@ func TestDiffHistory(t *testing.T) {
 	}
 }
 
+func TestDiffLocalWorktree(t *testing.T) {
+	rc, repo := setupProject(t)
+	ctx := context.Background()
+	if err := rc.Store.EnsureBare(ctx, rc.Config.Branch); err != nil {
+		t.Fatal(err)
+	}
+	docs := filepath.Join(repo, "private-docs")
+
+	writeDoc(t, docs, "mod.md", "old\n")
+	writeDoc(t, docs, "del.md", "gone\n")
+	writeDoc(t, docs, "keep.md", "keep\n")
+	base := pushDocs(t, repo)
+
+	// Uncommitted work: modified, added and deleted without a push.
+	writeDoc(t, docs, "mod.md", "new\n")
+	writeDoc(t, docs, "add.md", "fresh\n")
+	if err := os.Remove(filepath.Join(docs, "del.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	env := Env{Cwd: repo, Stdout: io.Discard, Stderr: io.Discard}
+	res, err := Diff(ctx, env, DiffOptions{Commit: base})
+	if err != nil {
+		t.Fatalf("diff: %v", err)
+	}
+	if res.From != base || res.To != base {
+		t.Errorf("from/to = %s/%s, want %s/%s", res.From, res.To, base, base)
+	}
+	if !strings.Contains(res.Raw, "diff --git a/mod.md b/mod.md") {
+		t.Errorf("rewritten header missing:\n%s", res.Raw)
+	}
+	scratch := state.TmpDir(rc.Repo.GitDir)
+	if strings.Contains(res.Raw, scratch) || strings.Contains(res.Raw, strings.TrimPrefix(scratch, "/")) {
+		t.Errorf("scratch path leaked into the patch:\n%s", res.Raw)
+	}
+	if strings.Contains(res.Raw, strings.TrimPrefix(repo, "/")) {
+		t.Errorf("worktree path leaked into the patch:\n%s", res.Raw)
+	}
+	if strings.Contains(res.Raw, "--- 1/") || strings.Contains(res.Raw, "+++ 2/") {
+		t.Errorf("git's mnemonic operands leaked into the patch:\n%s", res.Raw)
+	}
+
+	files := diffFiles(res)
+	mod, ok := files["mod.md"]
+	if !ok || mod.Status != "M" || mod.Insertions != 1 || mod.Deletions != 1 {
+		t.Errorf("mod.md = %+v (present %v)", mod, ok)
+	}
+	if !strings.Contains(mod.Patch, "-old") || !strings.Contains(mod.Patch, "+new") {
+		t.Errorf("mod.md patch = %q", mod.Patch)
+	}
+	if add, ok := files["add.md"]; !ok || add.Status != "A" || add.Insertions != 1 || add.Deletions != 0 {
+		t.Errorf("add.md = %+v (present %v)", add, ok)
+	} else if !strings.Contains(add.Patch, "new file mode") || !strings.Contains(add.Patch, "+fresh") {
+		t.Errorf("add.md patch = %q", add.Patch)
+	}
+	if del, ok := files["del.md"]; !ok || del.Status != "D" || del.Insertions != 0 || del.Deletions != 1 {
+		t.Errorf("del.md = %+v (present %v)", del, ok)
+	} else if !strings.Contains(del.Patch, "deleted file mode") || !strings.Contains(del.Patch, "-gone") {
+		t.Errorf("del.md patch = %q", del.Patch)
+	}
+	if _, ok := files["keep.md"]; ok {
+		t.Error("unchanged keep.md appeared in the diff")
+	}
+
+	// The default base is the mirror tip, so it shows the same local changes.
+	def, err := Diff(ctx, env, DiffOptions{})
+	if err != nil {
+		t.Fatalf("default diff: %v", err)
+	}
+	if len(def.Files) != 3 || !strings.Contains(def.Raw, "-old") {
+		t.Errorf("default diff files = %+v", def.Files)
+	}
+
+	// A path argument narrows the comparison to that project path.
+	narrow, err := Diff(ctx, env, DiffOptions{Commit: base, Path: "mod.md"})
+	if err != nil {
+		t.Fatalf("diff path: %v", err)
+	}
+	if len(narrow.Files) != 1 || narrow.Files[0].Path != "mod.md" {
+		t.Errorf("narrowed files = %+v", narrow.Files)
+	}
+	if strings.Contains(narrow.Raw, "add.md") || strings.Contains(narrow.Raw, "del.md") {
+		t.Errorf("filter leaked other files:\n%s", narrow.Raw)
+	}
+
+	// An added empty file still reads as an addition; the patch has no hunks.
+	writeDoc(t, docs, "empty.md", "")
+	empty, err := Diff(ctx, env, DiffOptions{Commit: base})
+	if err != nil {
+		t.Fatalf("diff empty add: %v", err)
+	}
+	if f, ok := diffFiles(empty)["empty.md"]; !ok || f.Status != "A" || f.Insertions != 0 || f.Deletions != 0 {
+		t.Errorf("empty.md = %+v (present %v)", f, ok)
+	} else if !strings.Contains(f.Patch, "new file mode") {
+		t.Errorf("empty.md patch = %q", f.Patch)
+	}
+
+	// The remote is broken: diff must still work from the mirror and the disk.
+	cfg := *rc.Config
+	cfg.Remote = "file://" + filepath.Join(t.TempDir(), "gone.git")
+	if err := config.Save(rc.Repo.GitDir, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	offline, err := Diff(ctx, env, DiffOptions{Commit: base})
+	if err != nil {
+		t.Fatalf("offline diff: %v", err)
+	}
+	if len(offline.Files) != 4 || !strings.Contains(offline.Raw, "-old") || !strings.Contains(offline.Raw, "+new") {
+		t.Errorf("offline files = %+v", offline.Files)
+	}
+	if before, _ := state.Load(rc.Repo.GitDir); before.SyncedCommit != base {
+		t.Errorf("diff advanced the baseline: %s", before.SyncedCommit)
+	}
+
+	// Every scratch directory is gone once the command returns.
+	entries, err := os.ReadDir(state.TmpDir(rc.Repo.GitDir))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "diff-") {
+			t.Errorf("scratch directory %q survived the diff", entry.Name())
+		}
+	}
+}
+
 func TestDiffUnknownRevision(t *testing.T) {
 	rc, repo := setupProject(t)
 	if err := rc.Store.EnsureBare(context.Background(), rc.Config.Branch); err != nil {

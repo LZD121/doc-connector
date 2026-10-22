@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/LZD121/doc-connector/internal/config"
 	"github.com/LZD121/doc-connector/internal/gitstore"
@@ -248,19 +249,39 @@ func checkLock(add func(id, status, detail, hint string), repo *project.Repo) {
 	lockPath := state.Path(repo.GitDir, "lock")
 	holder, found, err := state.Probe(repo.GitDir)
 	hint := "wait for that process to finish; the kernel releases the lock automatically if it dies"
-	switch {
-	case err != nil:
+	if err != nil {
 		add("lock", CheckWarn, fmt.Sprintf("%s exists but cannot be parsed: %v", lockPath, err),
 			"the record is diagnostic only; delete the file once no doc-connector process is running")
-	case found && holder.PID != 0:
+		return
+	}
+	if !found {
+		add("lock", CheckOK, "no lock holder", "")
+		return
+	}
+
+	// The lock file outlives its holder on purpose: it is the diagnostic record
+	// of the last writer. Only an actual flock tells us whether a process is
+	// working right now, so take it for an instant and give it back.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	lock, aerr := state.Acquire(ctx, repo.GitDir, "doctor", "doctor")
+	if aerr == nil {
+		_ = lock.Release()
+		last := fmt.Sprintf("last writer pid %d", holder.PID)
+		if holder.Cmd != "" {
+			last += fmt.Sprintf(" (%s)", holder.Cmd)
+		}
+		add("lock", CheckOK, fmt.Sprintf("%s is free; %s", lockPath, last), "")
+		return
+	}
+	if isLockError(aerr) {
 		add("lock", CheckWarn,
 			fmt.Sprintf("pid %d on %s is running %q since %s (record in %s)",
 				holder.PID, holder.Machine, holder.Cmd, holder.StartedAt, lockPath), hint)
-	case found:
-		add("lock", CheckWarn, fmt.Sprintf("%s exists without a holder pid", lockPath), hint)
-	default:
-		add("lock", CheckOK, "no lock holder", "")
+		return
 	}
+	add("lock", CheckWarn, fmt.Sprintf("cannot test %s: %v", lockPath, aerr),
+		"check the directory permissions for the doc-connector state directory")
 }
 
 // checkRemote reports the mirror tip without touching the network: Fetch is

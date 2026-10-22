@@ -106,11 +106,3 @@ func trailerValue(body, key string) string {
 	}
 	return ""
 }
-
-func validateUserPath(rel string, rc *RepoContext) error {
-	budget := rc.Config.Limits.MaxPathChars - len(rc.Config.DocsDir) - 1
-	if err := validatePath(rel, budget); err != nil {
-		return err
-	}
-	return nil
-}

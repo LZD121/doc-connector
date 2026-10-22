@@ -156,4 +156,34 @@ func TestDiffCommand(t *testing.T) {
 	if !strings.Contains(out, "+TWO") || !strings.Contains(out, "deleted file mode") {
 		t.Errorf("offline diff lost content:\n%s", out)
 	}
+
+	// An edit made after the last push must appear: diff compares the base
+	// revision with the working tree, not with the remote-tracking tip. This is
+	// the regression the end-to-end smoke test caught.
+	write("a.md", "one\nTWO\nthree\n")
+	code, out, errOut = run(t, repo, "diff", "--json", second)
+	if code != 0 {
+		t.Fatalf("diff --json after local edit: code=%d err=%s", code, errOut)
+	}
+	doc = decodeOne(t, out)
+	if got, _ := doc["to"].(string); got != second {
+		t.Errorf("to = %q, want %q", got, second)
+	}
+	files, _ = doc["files"].([]any)
+	if len(files) != 1 {
+		t.Fatalf("local edit files = %v", doc["files"])
+	}
+	file, _ = files[0].(map[string]any)
+	if file["path"] != "a.md" || file["status"] != "M" {
+		t.Errorf("local edit file = %v", file)
+	}
+	if got := file["insertions"]; got != float64(1) {
+		t.Errorf("local edit insertions = %v", got)
+	}
+	if got := file["deletions"]; got != float64(0) {
+		t.Errorf("local edit deletions = %v", got)
+	}
+	if patch, _ := file["patch"].(string); !strings.Contains(patch, "+three") {
+		t.Errorf("local edit patch = %q", patch)
+	}
 }

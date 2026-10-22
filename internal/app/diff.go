@@ -2,11 +2,18 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/LZD121/doc-connector/internal/gitstore"
+	"github.com/LZD121/doc-connector/internal/state"
+	"github.com/LZD121/doc-connector/internal/trees"
 )
 
 // DiffOptions selects the revision to start from and an optional path.
@@ -16,8 +23,8 @@ type DiffOptions struct {
 	Path   string
 }
 
-// DiffFile is one file in a historical diff. Path is relative to the project
-// prefix, so it reads the same way as every other user-facing path.
+// DiffFile is one file in a diff of the project prefix. Path is relative to
+// the project prefix, so it reads the same way as every other user-facing path.
 type DiffFile struct {
 	Path       string
 	Status     string // A (added), D (deleted) or M (modified)
@@ -27,18 +34,18 @@ type DiffFile struct {
 	Truncated  bool
 }
 
-// DiffResult is one historical diff of the project prefix.
+// DiffResult is one diff of the project prefix against the local docs tree.
 //
-// To is the revision the base is compared against. It is the mirror's
-// remote-tracking tip (or the last synced commit when the ref is gone), which
-// is the closest local stand-in for the docs directory: push and pull advance
-// both together.
+// To is the latest synced revision the mirror knows: the remote-tracking tip,
+// or the last synced commit when the ref is gone. It labels the revision the
+// local tree was last known to match; the comparison itself runs the base
+// subtree against the files on disk, so uncommitted edits still appear.
 type DiffResult struct {
 	From  string // full OID of the resolved base revision
-	To    string // full OID of the revision compared against
+	To    string // full OID of the latest synced revision
 	Path  string // user path filter, empty when the whole prefix is shown
 	Files []DiffFile
-	Raw   string // the unified patch, byte for byte
+	Raw   string // the rewritten unified patch, byte for byte
 }
 
 // maxPatchBytes bounds one DiffFile.Patch so a huge document cannot flood a
@@ -46,17 +53,21 @@ type DiffResult struct {
 const maxPatchBytes = 64 << 10
 
 // Diff shows how one historical version of the project prefix differs from the
-// currently synced revision. It runs entirely against the local mirror: no
-// fetch, no ref or object writes, no state writes.
+// local docs tree, including edits that were never pushed. It reads the local
+// mirror and the docs directories only: no fetch, no ref or object writes, no
+// state writes.
 //
-// The docs directory is an ordinary directory, not a git work tree, and the
-// mirror is bare, so `git diff <tree>` (tree versus work tree) cannot run here.
-// The command therefore diffs two <project_id> subtrees inside the mirror: the
-// resolved base revision and the current target. Because both operands are the
-// prefix subtree, patch paths are already project-relative and a path argument
-// is a plain subtree path. When a revision has no <project_id> entry, the empty
-// tree stands in for it, so the whole prefix reads as added or deleted instead
-// of failing with a bare "bad object".
+// The mirror is bare and a docs directory is not a git work tree, so git cannot
+// compare a tree with the filesystem in one invocation. The command therefore
+// reads the base revision's <project_id> subtree, scans the docs directories
+// into the same project paths, and pairs every changed path with two files in a
+// private scratch directory: the base blob (written with git cat-file) or an
+// empty stand-in when the path is new, and the real local file or an empty
+// stand-in when the path is gone. `git diff --no-index` renders each pair, and
+// the scratch names in the header are rewritten to the project path, so the
+// temp directory never leaks into output. A revision with no <project_id> entry
+// contributes an empty tree, so a pre-docs commit reads as the whole prefix
+// being added instead of failing with a bare "bad object".
 func Diff(ctx context.Context, env Env, opts DiffOptions) (*DiffResult, error) {
 	rc, err := Load(ctx, env, LoadOptions{CreateDocs: false})
 	if err != nil {
@@ -64,10 +75,9 @@ func Diff(ctx context.Context, env Env, opts DiffOptions) (*DiffResult, error) {
 	}
 	defer rc.Close()
 
-	if opts.Path != "" {
-		if err := validateUserPath(opts.Path, rc); err != nil {
-			return nil, wrapErr(err, codeGuard)
-		}
+	filter, err := diffFilter(rc, opts.Path)
+	if err != nil {
+		return nil, err
 	}
 
 	base, err := diffBase(ctx, rc, opts)
@@ -79,36 +89,270 @@ func Diff(ctx context.Context, env Env, opts DiffOptions) (*DiffResult, error) {
 		return nil, err
 	}
 
-	fromSide, err := projectSide(ctx, rc, base)
+	baseTree, err := diffBaseTree(ctx, rc, base)
 	if err != nil {
 		return nil, err
 	}
-	toSide, err := projectSide(ctx, rc, target)
+	scanned, err := rc.ScanLocal(ctx, ScanPolicy{})
 	if err != nil {
 		return nil, err
 	}
 
-	// core.quotePath=false keeps non-ASCII names readable in the patch instead
-	// of C-quoted octal escapes; the parser still unquotes when git must quote.
-	args := []string{
-		"-c", "core.quotePath=false",
-		"diff", "--no-color", "--no-ext-diff", fromSide, toSide,
+	res := &DiffResult{From: base, To: target, Path: opts.Path, Files: []DiffFile{}}
+	changes := diffChanges(baseTree, scanned.Tree, filter)
+	if len(changes) == 0 {
+		return res, nil
 	}
-	if opts.Path != "" {
-		args = append(args, "--", opts.Path)
+	res.Files, res.Raw, err = diffPatches(ctx, rc, changes)
+	if err != nil {
+		return nil, err
 	}
-	raw, derr := rc.Store.Run(ctx, args...)
-	if derr != nil {
-		return nil, wrapErr(derr, 1)
+	return res, nil
+}
+
+// diffFilter turns the optional user path into a project-path filter. A name
+// that equals a configured prefix selects that whole mapping, matching the
+// subtree pathspec the command accepted before it read the work tree;
+// otherwise the path resolves like every other user path.
+func diffFilter(rc *RepoContext, p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	for _, e := range rc.Docs {
+		if e.Mapping.Prefix != "" && p == e.Mapping.Prefix {
+			return p, nil
+		}
+	}
+	entry, rel, err := rc.resolveUserPath(p)
+	if err != nil {
+		return "", err
+	}
+	if err := validatePath(rel, entry.Budget); err != nil {
+		return "", wrapErr(err, codeGuard)
+	}
+	return projectPath(entry.Mapping.Prefix, rel), nil
+}
+
+// diffBaseTree reads the base revision's project subtree. A commit that
+// predates the prefix has no <project_id> entry; it contributes an empty tree.
+func diffBaseTree(ctx context.Context, rc *RepoContext, commit string) (trees.Tree, error) {
+	_, ok, err := rc.Store.TreeOf(ctx, commit, rc.Config.Project.ID)
+	if err != nil {
+		return nil, wrapErr(err, 1)
+	}
+	if !ok {
+		return trees.Tree{}, nil
+	}
+	tree, err := trees.ReadTree(ctx, rc.Store, commit+":"+rc.Config.Project.ID)
+	if err != nil {
+		return nil, wrapErr(err, 1)
+	}
+	return tree, nil
+}
+
+// diffChange is one project path whose base and local entries differ.
+type diffChange struct {
+	Path     string
+	Status   string // A (added), D (deleted) or M (modified)
+	Base     trees.Entry
+	HasBase  bool
+	Local    trees.Entry
+	HasLocal bool
+}
+
+// diffChanges lists changed project paths in sorted order, so the patch is
+// deterministic. filter is a project path or a directory prefix of one; empty
+// means the whole prefix.
+func diffChanges(base, local trees.Tree, filter string) []diffChange {
+	seen := make(map[string]struct{}, len(base)+len(local))
+	paths := make([]string, 0, len(base)+len(local))
+	for _, tree := range []trees.Tree{base, local} {
+		for p := range tree {
+			if !diffPathMatches(p, filter) {
+				continue
+			}
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			paths = append(paths, p)
+		}
+	}
+	sort.Strings(paths)
+
+	changes := make([]diffChange, 0, len(paths))
+	for _, p := range paths {
+		b, hasBase := base[p]
+		l, hasLocal := local[p]
+		change := diffChange{Path: p, Base: b, HasBase: hasBase, Local: l, HasLocal: hasLocal}
+		switch {
+		case hasBase && !hasLocal:
+			change.Status = "D"
+		case !hasBase && hasLocal:
+			change.Status = "A"
+		case b.OID != l.OID:
+			change.Status = "M"
+		default:
+			continue
+		}
+		changes = append(changes, change)
+	}
+	return changes
+}
+
+// diffPathMatches applies the user path filter: a path names itself and, when
+// it is a directory, everything below it.
+func diffPathMatches(p, filter string) bool {
+	return filter == "" || p == filter || strings.HasPrefix(p, filter+"/")
+}
+
+// diffPatches renders one patch per change. Base blobs and both empty stand-ins
+// live in a scratch directory under state.TmpDir, which is removed on every
+// return path; the local side is the real file on disk and is only read.
+func diffPatches(ctx context.Context, rc *RepoContext, changes []diffChange) ([]DiffFile, string, error) {
+	dir := filepath.Join(state.TmpDir(rc.Repo.GitDir), "diff-"+randomSuffix())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, "", wrapErr(err, 1)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	empty := filepath.Join(dir, "empty")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		return nil, "", wrapErr(err, 1)
 	}
 
-	return &DiffResult{
-		From:  base,
-		To:    target,
-		Path:  opts.Path,
-		Files: parseDiff(raw),
-		Raw:   raw,
-	}, nil
+	oids := make([]string, 0, len(changes))
+	for _, ch := range changes {
+		if ch.HasBase {
+			oids = append(oids, ch.Base.OID)
+		}
+	}
+	blobs, err := rc.Store.WriteBlobs(ctx, oids, dir)
+	if err != nil {
+		return nil, "", wrapErr(err, 1)
+	}
+
+	files := make([]DiffFile, 0, len(changes))
+	var raw strings.Builder
+	for _, ch := range changes {
+		baseTmp := empty
+		if ch.HasBase {
+			p, ok := blobs[ch.Base.OID]
+			if !ok {
+				return nil, "", errf(1, "base blob %s for %q was not extracted", shortOID(ch.Base.OID), ch.Path).
+					withHint("run pull once while online to refill the local mirror")
+			}
+			baseTmp = p
+		}
+		localTmp := empty
+		if ch.HasLocal {
+			entry, rel, rerr := rc.resolveProjectPath(ch.Path)
+			if rerr != nil {
+				return nil, "", rerr
+			}
+			localTmp = filepath.Join(entry.Abs, filepath.FromSlash(rel))
+			info, serr := os.Stat(localTmp)
+			if serr != nil || !info.Mode().IsRegular() {
+				return nil, "", errf(1, "local file %q changed while diffing", ch.Path).
+					withHint("re-run the command; a file that moves during the diff cannot produce a stable patch")
+			}
+		}
+
+		// --no-textconv: a .gitattributes driver must not rewrite document
+		// bytes (or run a command) while the user only asked to see a diff.
+		out, derr := rc.Store.Run(ctx, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", baseTmp, localTmp)
+		if derr != nil {
+			if ctx.Err() != nil {
+				return nil, "", wrapErr(ctx.Err(), 1)
+			}
+			var ge *gitstore.Error
+			if !errors.As(derr, &ge) || ge.Code != 1 {
+				wrapped := wrapErr(derr, 1)
+				if ae, ok := wrapped.(*Error); ok && ae.Hint == "" {
+					_ = ae.withHint("check that the docs directory and the local mirror are readable, then retry")
+				}
+				return nil, "", wrapped
+			}
+			// Exit code 1 means "the files differ"; stdout is the patch.
+		}
+
+		block := rewriteDiffBlock(out, ch)
+		parsed := parseDiff(block)
+		if len(parsed) != 1 {
+			return nil, "", errf(1, "patch for %q did not produce exactly one block", ch.Path)
+		}
+		file := parsed[0]
+		file.Path = ch.Path
+		file.Status = ch.Status
+		files = append(files, file)
+		raw.WriteString(block)
+	}
+	return files, raw.String(), nil
+}
+
+// rewriteDiffBlock replaces the scratch file names git prints with the project
+// path and restores the new/deleted mode line that the empty stand-in hides.
+// Only header lines before the first hunk (or the binary line) are touched, so
+// a deleted content line that itself reads like a header cannot be rewritten.
+// git's old/new mode lines are dropped: the scratch files are 0600, so those
+// modes describe the temp files rather than the revisions. Content identity
+// decides M, so a mode-only difference is not reported; added and deleted
+// files still carry the mode the tree recorded.
+func rewriteDiffBlock(raw string, ch diffChange) string {
+	var out strings.Builder
+	out.WriteString("diff --git a/" + ch.Path + " b/" + ch.Path + "\n")
+	switch {
+	case !ch.HasBase:
+		fmt.Fprintf(&out, "new file mode %06o\n", ch.Local.Mode)
+	case !ch.HasLocal:
+		fmt.Fprintf(&out, "deleted file mode %06o\n", ch.Base.Mode)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(raw, "\n"), "\n")
+	inBody := false
+	for i, line := range lines {
+		if i == 0 {
+			continue // git's own header names the scratch files
+		}
+		switch {
+		case inBody:
+			out.WriteString(line + "\n")
+		case strings.HasPrefix(line, "@@ "):
+			inBody = true
+			out.WriteString(line + "\n")
+		case strings.HasPrefix(line, "old mode "), strings.HasPrefix(line, "new mode "):
+			// Replaced above with the modes recorded in the revisions.
+		case strings.HasPrefix(line, "--- "):
+			out.WriteString("--- " + diffOperand("a", ch.Path, ch.HasBase) + headerTab(ch.Path) + "\n")
+		case strings.HasPrefix(line, "+++ "):
+			out.WriteString("+++ " + diffOperand("b", ch.Path, ch.HasLocal) + headerTab(ch.Path) + "\n")
+		case strings.HasPrefix(line, "Binary files "):
+			inBody = true
+			out.WriteString("Binary files " + diffOperand("a", ch.Path, ch.HasBase) +
+				" and " + diffOperand("b", ch.Path, ch.HasLocal) + " differ\n")
+		default:
+			out.WriteString(line + "\n")
+		}
+	}
+	return out.String()
+}
+
+// diffOperand names one side of the rewritten patch. A missing side reads as
+// /dev/null, exactly as it does in a real git diff.
+func diffOperand(prefix, path string, exists bool) string {
+	if !exists {
+		return "/dev/null"
+	}
+	return prefix + "/" + path
+}
+
+// headerTab separates a path containing spaces from the rest of a "---"/"+++"
+// line, because git's own output does the same.
+func headerTab(path string) string {
+	if strings.ContainsRune(path, ' ') {
+		return "\t"
+	}
+	return ""
 }
 
 // diffBase resolves the base revision with the same ladder as Restore:
@@ -137,8 +381,8 @@ func diffBase(ctx context.Context, rc *RepoContext, opts DiffOptions) (string, e
 	return strings.TrimSpace(commit), nil
 }
 
-// diffTarget resolves the revision to compare against: the mirror tip, then the
-// last synced commit recorded in state.
+// diffTarget resolves the latest synced revision reported in To: the mirror
+// tip, then the last synced commit recorded in state.
 func diffTarget(ctx context.Context, rc *RepoContext) (string, error) {
 	commit := ""
 	tip, rerr := rc.Store.RefTip(ctx, gitstore.RemoteBranch(rc.Config.Branch))
@@ -160,25 +404,6 @@ func diffTarget(ctx context.Context, rc *RepoContext) (string, error) {
 			withHint("run pull once while online to refill the mirror")
 	}
 	return strings.TrimSpace(oid), nil
-}
-
-// projectSide returns the tree-ish for one revision's project prefix, or the
-// empty tree when that revision has no such entry.
-func projectSide(ctx context.Context, rc *RepoContext, commit string) (string, error) {
-	_, ok, err := rc.Store.TreeOf(ctx, commit, rc.Config.Project.ID)
-	if err != nil {
-		return "", wrapErr(err, 1)
-	}
-	if ok {
-		return commit + ":" + rc.Config.Project.ID, nil
-	}
-	out, herr := rc.Store.Run(ctx, "hash-object", "-t", "tree", "--stdin")
-	if herr != nil {
-		return "", wrapErr(herr, 1)
-	}
-	// Computed rather than hard-coded: a sha256 project has a different empty
-	// tree id, and hash-object adds no object to the mirror without -w.
-	return strings.TrimSpace(out), nil
 }
 
 // parseDiff splits a unified patch into one entry per "diff --git" block.
@@ -222,10 +447,6 @@ func parseDiffBlock(lines []string) DiffFile {
 			inHunk = true
 		case strings.HasPrefix(line, "diff --git "):
 			header = line
-		case strings.HasPrefix(line, "@@ "):
-			inHunk = true
-		case inHunk:
-			// hunk body; counts are taken in a second pass
 		case strings.HasPrefix(line, "new file mode "):
 			status = "A"
 		case strings.HasPrefix(line, "deleted file mode "):
@@ -256,9 +477,13 @@ func parseDiffBlock(lines []string) DiffFile {
 	}
 
 	insertions, deletions := 0, 0
+	inHunk = false
 	for _, line := range lines {
 		switch {
-		case strings.HasPrefix(line, "+++ "), strings.HasPrefix(line, "--- "):
+		case strings.HasPrefix(line, "@@ "):
+			inHunk = true
+		case !inHunk:
+			// mode/index/---/+++ headers are not content
 		case strings.HasPrefix(line, "+"):
 			insertions++
 		case strings.HasPrefix(line, "-"):
