@@ -14,21 +14,22 @@
 
 ### Validated
 
-(None yet — ship to validate)
+v1.0 shipped 2026-10-22 — all 49 requirements complete. See `.planning/milestones/v1.0-REQUIREMENTS.md`.
+
+- [x] `init --remote <url>` binds the project to a private docs repository with hidden config and a managed exclude block
+- [x] Deterministic 12-hex project id from the root commit, with explicit override and ambiguity refusal
+- [x] `private-docs/` is hidden via `.git/info/exclude`; `.gitignore` is never touched
+- [x] `push` publishes `<project_id>/` with lease protection, retry, trailers and no-op detection
+- [x] `pull` applies remote adds/mods/deletes atomically under a journal, never deleting local-only files
+- [x] `status` reports clean/ahead/behind/diverged and per-file variants from blob OIDs
+- [x] Conflicts keep local bytes and leave exactly one `.theirs.<machine>` copy; `push --resolve` closes them
+- [x] `log` works offline; `restore` recovers history without auto-committing
+- [x] Junk files, symlinks, case/NFC collisions and size limits are refused with actionable messages
+- [x] Three-platform CI and GoReleaser configuration for six static targets
 
 ### Active
 
-- [ ] `init --remote <url>` 将当前主仓库关联到私有 docs 仓库，并写入隐身配置
-- [ ] 项目标识由主仓库根提交 SHA 确定性推导，跨克隆一致，可显式覆盖
-- [ ] 文档目录默认 `private-docs/`，自动写入 `.git/info/exclude`，不改动共享的 `.gitignore`
-- [ ] `push` 把本地文档提交到私有仓库的 `<project_id>/` 目录
-- [ ] `pull` 把远端变更写回本地，支持新增/修改/删除
-- [ ] `status` 明确显示 clean / ahead / behind / diverged 以及逐文件差异
-- [ ] 冲突时保留本地文件并生成 `.theirs.<host>` 副本，绝不静默覆盖
-- [ ] `log` 查看同步历史，`restore` 从历史提交恢复单个文件
-- [ ] 内置垃圾文件忽略列表（`.DS_Store`、`Thumbs.db`、`desktop.ini` 等）
-- [ ] 拒绝在文档未被正确排除、或 `project_id` 不匹配时执行任何写操作
-
+None — v1.0 is complete. v2 themes (OBS/LOCL/DIST) are archived and await `/gsd-new-milestone`.
 ### Out of Scope
 
 - **凭据/密钥同步** — 改用密码管理器；本工具不承担 secrets 管理
@@ -64,18 +65,22 @@
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 独立私有 docs 仓库，不复用主仓库 | 主仓库是团队仓库，不能写入任何私人对象 | — Pending |
-| 项目标识 = 根提交 OID 前 12 位十六进制字符（不再二次哈希） | 跨克隆确定性且不可变；`.git` 路径与本地 UUID 跨机器不一致，无法用于匹配。SHA-1 与 SHA-256 仓库同样适用；多根提交或浅克隆时拒绝并要求 `--project-id` | — Pending |
-| 多项目共用一个私有仓库，按 `<project_id>/` 前缀分目录 | 单处管理，避免仓库数量膨胀；哈希前缀天然避免重名 | — Pending |
-| 文档目录 `private-docs/` + `.git/info/exclude` | 主仓库 `git status` 保持干净，且不修改团队共享的 `.gitignore` | — Pending |
-| 配置存 `.git/doc-connector/config.yaml` | 用户要求完全不进仓库；代价是每台新机器重新 init | — Pending |
-| 上次同步 commit 作为三方基线 | 能区分“本地改了”“远端改了”“双方都改了”，避免静默覆盖 | — Pending |
-| 冲突保留本地 + `.theirs.<host>` 副本，退出码非零 | 用户最不能接受丢改动；二进制文件无法自动合并 | — Pending |
-| 不加密，凭据移出同步范围 | 私有仓库 ACL 为边界；避免 age/GPG 密钥在多机间的管理负担 | — Pending |
-| Go + shell out 到 git | 复用系统凭据、SSH、代理配置；单文件分发，跨三平台 | — Pending |
-| 裸镜像 `.git/doc-connector/store.git` + plumbing | 文档只有一份，避免第二工作树与工作区漂移；`log`/`restore` 直接读镜像 | — Pending |
-| 手动 CLI（init/push/pull/status/log/restore） | 用户明确不要后台 watch/hook；同步时机完全可控 | — Pending |
-| 内置垃圾文件忽略列表 | 避免 `.DS_Store` 等系统文件污染私有仓库 | — Pending |
+| 独立私有 docs 仓库，不复用主仓库 | 主仓库是团队仓库，不能写入任何私人对象 | — Validated in v1.0 |
+| 项目标识 = 根提交 OID 前 12 位十六进制字符（不再二次哈希） | 跨克隆确定性且不可变；`.git` 路径与本地 UUID 跨机器不一致，无法用于匹配。SHA-1 与 SHA-256 仓库同样适用；多根提交或浅克隆时拒绝并要求 `--project-id` | — Validated in v1.0 |
+| 多项目共用一个私有仓库，按 `<project_id>/` 前缀分目录 | 单处管理，避免仓库数量膨胀；哈希前缀天然避免重名 | — Validated in v1.0 |
+| 文档目录 `private-docs/` + `.git/info/exclude` | 主仓库 `git status` 保持干净，且不修改团队共享的 `.gitignore` | — Validated in v1.0 |
+| 配置存 `.git/doc-connector/config.yaml` | 用户要求完全不进仓库；代价是每台新机器重新 init | — Validated in v1.0 |
+| 上次同步 commit 作为三方基线 | 能区分“本地改了”“远端改了”“双方都改了”，避免静默覆盖 | — Validated in v1.0 |
+| 冲突保留本地 + `.theirs.<host>` 副本，退出码非零 | 用户最不能接受丢改动；二进制文件无法自动合并 | — Validated in v1.0 |
+| 不加密，凭据移出同步范围 | 私有仓库 ACL 为边界；避免 age/GPG 密钥在多机间的管理负担 | — Validated in v1.0 |
+| Go + shell out 到 git | 复用系统凭据、SSH、代理配置；单文件分发，跨三平台 | — Validated in v1.0 |
+| 裸镜像 `.git/doc-connector/store.git` + plumbing | 文档只有一份，避免第二工作树与工作区漂移；`log`/`restore` 直接读镜像 | — Validated in v1.0 |
+| 手动 CLI（init/push/pull/status/log/restore） | 用户明确不要后台 watch/hook；同步时机完全可控 | — Validated in v1.0 |
+| 内置垃圾文件忽略列表 | 避免 `.DS_Store` 等系统文件污染私有仓库 | — Validated in v1.0 |
+
+## Current State
+
+**v1.0 shipped (2026-10-22).** Working tree contains the Go CLI, unit/CLI tests (86 test functions), CI matrix and GoReleaser config. The binary was exercised end-to-end on Linux against local `file://` bare remotes: init → push → second-machine init → pull → push → pull → clean status, plus conflicts, resolve, restore and offline log. CI matrix and release packaging execute on the next push/tag (see audit tech debt).
 
 ## Evolution
 
@@ -95,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-22 after initialization*
+*Last updated: 2026-10-22 after v1.0 milestone close*

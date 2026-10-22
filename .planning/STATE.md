@@ -1,6 +1,6 @@
 ---
 gsd_state_version: '1.0'
-status: milestone-complete
+status: shipped
 progress:
   total_phases: 5
   completed_phases: 5
@@ -16,14 +16,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-22)
 
 **Core value:** 让私有文档在多台机器间可验证地同步，同时保证主仓库的历史与工作区永远不含它们。
-**Current focus:** Milestone audit / close
+**Current focus:** v1.0 shipped — next milestone not started
 
 ## Current Position
 
-Phase: 5 of 5 (历史、硬化与发布)
-Plan: 5 of 5 in current phase
-Status: All phases complete — ready for milestone audit
-Last activity: 2026-10-22 — Phase 5 完成：log/restore、路径与体积硬化、CI/GoReleaser
+Phase: — (v1.0 shipped)
+Status: Milestone complete; no active phase
+Last activity: 2026-10-22 — v1.0 audited, archived and tagged
 
 Progress: [██████████] 100%
 
@@ -77,10 +76,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 2：收养/分歧决策矩阵（本地有内容 × 远端前缀存在 × 基线缺失）需在规划时先定稿。
-- Phase 3：journal 恢复语义与 Windows 替换/锁定行为无法在 WSL2 完全验证，需 CI 矩阵实测后固化。
-- Phase 4：竞争重试状态机与 `pending` ref 在 `gc --auto` 下的存活保证需双 store 原型验证。
-- PLAT-01：三平台交叉构建已通过；运行时矩阵在 Phase 5 CI 落地后关闭。
+None. Carried tech debt is recorded in `.planning/milestones/v1.0-MILESTONE-AUDIT.md` (CI/goreleaser first run, Windows/macOS runtime matrix, race-window coverage).
 
 ## Deferred Items
 
@@ -93,5 +89,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-22
-Stopped at: Phase 5 验证通过（5/5），里程碑可审计
-Resume file: .planning/phases/05-history-hardening-release/05-VERIFICATION.md
+Stopped at: v1.0 shipped; run /gsd-new-milestone for v2
+Resume file: .planning/MILESTONES.md
