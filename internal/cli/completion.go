@@ -27,6 +27,7 @@ var completionTable = []completionCommand{
 	{Name: "doctor", Desc: "Diagnose the repository without changing it", Flags: []string{"--json", "--help"}},
 	{Name: "diff", Desc: "Show a historical diff for this project", Flags: []string{"--from", "--json", "--help"}},
 	{Name: "sync", Desc: "Sync every repository under a directory", Flags: []string{"--root", "--dry-run", "--fail-fast", "--json", "--help"}},
+	{Name: "tui", Desc: "Interactive workspace screen with conflict triage", Flags: []string{"--root", "--help"}},
 	{Name: "completion", Desc: "Print a shell completion script", Flags: []string{"--help"}},
 }
 
