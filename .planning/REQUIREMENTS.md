@@ -12,9 +12,9 @@ Committed scope. Every requirement maps to exactly one phase in `ROADMAP.md`.
 
 ### 可观测性
 
-- [ ] **OBS-01**: 用户可用 `status --json`、`push --json`、`pull --json` 获得稳定 schema 的结果，字段含 `schema_version`、`command`、`ok`；失败时同样输出单个 JSON 对象（`error.code`/`error.message`/`error.hint`）并以非零码退出，stdout 不含 ANSI
-- [ ] **OBS-02**: 用户可用 `doctor` 一次性诊断：git 版本、`.git/info/exclude` 中 managed 块的来源与生效性、文档路径是否被跟踪、远端可达性、当前锁持有者、base 与远端 tip 的一致性、遗留临时/冲突产物
-- [ ] **OBS-03**: 每条错误路径都带 `hint`，且 hint 只陈述工具已实际验证过的状态或可直接执行的命令；`--json` 下同一 hint 出现在 `error.hint` 字段（当前 32 处 `withHint` 为既有基础，本项把它升级为全覆盖契约 + 测试断言）
+- [x] **OBS-01**: 用户可用 `status --json`、`push --json`、`pull --json` 获得稳定 schema 的结果，字段含 `schema_version`、`command`、`ok`；失败时同样输出单个 JSON 对象（`error.code`/`error.message`/`error.hint`）并以非零码退出，stdout 不含 ANSI
+- [x] **OBS-02**: 用户可用 `doctor` 一次性诊断：git 版本、`.git/info/exclude` 中 managed 块的来源与生效性、文档路径是否被跟踪、远端可达性、当前锁持有者、base 与远端 tip 的一致性、遗留临时/冲突产物
+- [x] **OBS-03**: 每条错误路径都带 `hint`，且 hint 只陈述工具已实际验证过的状态或可直接执行的命令；`--json` 下同一 hint 出现在 `error.hint` 字段（当前 32 处 `withHint` 为既有基础，本项把它升级为全覆盖契约 + 测试断言）
 
 ### 本地控制
 
@@ -73,9 +73,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OBS-01 | Phase 6 | Pending |
-| OBS-02 | Phase 6 | Pending |
-| OBS-03 | Phase 6 | Pending |
+| OBS-01 | Phase 6 | Complete |
+| OBS-02 | Phase 6 | Complete |
+| OBS-03 | Phase 6 | Complete |
 | LOCL-01 | Phase 7 | Pending |
 | LOCL-02 | Phase 7 | Pending |
 | LOCL-03 | Phase 7 | Pending |

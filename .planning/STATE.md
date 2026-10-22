@@ -2,15 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.0
 milestone_name: 可观测、本地控制、分发与聚合
+current_phase: 7
+current_phase_name: 本地控制与历史视图
 status: planning
-last_updated: "2026-10-22T15:30:38.117Z"
+stopped_at: Phase 6 complete, ready to plan Phase 7
+last_updated: "2026-10-22T15:44:18.296Z"
 last_activity: 2026-10-22
+last_activity_desc: Phase 6 complete, transitioned to Phase 7
+state_head: 8ac03e8ed5a70b1044e37f47dc8b6b24c3479aa4
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 5
+  completed_phases: 1
+  total_plans: 21
+  completed_plans: 5
+  percent: 20
 ---
 
 # Project State
@@ -24,15 +29,15 @@ See: .planning/PROJECT.md (updated 2026-10-22)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-10-22 — Milestone v2.0 started
+Phase: 7 — 本地控制与历史视图
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-22 — Phase 6 complete, transitioned to Phase 7
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
+- Total plans completed: 28
 - Average duration: 21 min
 - Total execution time: 8.1 hours
 
@@ -40,11 +45,7 @@ Last activity: 2026-10-22 — Milestone v2.0 started
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. 契约、身份与基础设施 | 4 | 4 | 19 min |
-| 2. 隔离护栏与 init | 4 | 4 | 19 min |
-| 3. 状态与干净拉取 | 5 | 5 | 21 min |
-| 4. 冲突与推送 | 5 | 5 | 24 min |
-| 5. 历史、硬化与发布 | 5 | 5 | 18 min |
+| 06 | 5 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: 18, 24, 20, 12, 15
@@ -97,5 +98,14 @@ Items acknowledged and deferred, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-22
-Stopped at: v2.0 initialized — 12 requirements, phases 6–10; next `/gsd-discuss-phase 6`
+Stopped at: Phase 6 complete, ready to plan Phase 7
 Resume file: `.planning/ROADMAP.md`
+
+## Rebuild Log
+
+- timestamp: 2026-10-22T15:44:18.268Z
+  kind: by-phase-table-reconciled
+  section: ## Performance Metrics
+  before: | Phase | Plans | Total | Avg/Plan | \n |-------|-------|-------|----------| \n | 1. 契约、身份与基础设施 | 4 | 4 | 19 min | \n | 2. 隔离护栏与 init | 4 | 4 | 19 min | \n | 3. 状态与干净拉取 | 5 | 5 | 21 min | \n | 4. 冲突与推送 | 5 | 5 | 24 min | \n | 5. 历史、硬化与发布 | 5 | 5 | 18 min | \n | 6 | 5 | - | - |
+  after: | Phase | Plans | Total | Avg/Plan | \n |-------|-------|-------|----------| \n | 06 | 5 | - | - |
+  reason: phase dirs on disk are canonical; rows for missing phases dropped, missing phases added
