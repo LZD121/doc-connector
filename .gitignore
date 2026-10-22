@@ -1,3 +1,4 @@
 /dist/
 /doc-connector
 /coverage.out
+/.planning/state.json
