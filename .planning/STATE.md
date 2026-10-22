@@ -22,7 +22,7 @@ See: .planning/PROJECT.md (updated 2026-10-22)
 
 Phase: — (v1.0 shipped)
 Status: Milestone complete; no active phase
-Last activity: 2026-10-22 — v1.0 audited, archived and tagged
+Last activity: 2026-10-22 — v1.0 CI 全绿，release 已发布（六个平台归档 + 校验和）
 
 Progress: [██████████] 100%
 
@@ -76,7 +76,7 @@ None yet.
 
 ### Blockers/Concerns
 
-None. Carried tech debt is recorded in `.planning/milestones/v1.0-MILESTONE-AUDIT.md` (CI/goreleaser first run, Windows/macOS runtime matrix, race-window coverage).
+None. Remaining debt is recorded in `.planning/milestones/v1.0-MILESTONE-AUDIT.md` (cask upload awaits tap token; race-window coverage).
 
 ## Deferred Items
 
