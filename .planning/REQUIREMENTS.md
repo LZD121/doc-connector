@@ -18,20 +18,20 @@ Committed scope. Every requirement maps to exactly one phase in `ROADMAP.md`.
 
 ### 本地控制
 
-- [ ] **LOCL-01**: 用户可在文档根放置 `.docignore`（不提交、不推送、不进 status），支持 basename 与目录前缀两种模式，叠加在内置垃圾列表之上，并作用于 status/push/pull 三处
-- [ ] **LOCL-02**: 用户可为一个项目配置多个文档目录（config 从单 `docs_dir` 升级为目录列表），每目录独立映射到 `<project_id>/<prefix>`；旧单目录 config 自动迁移，`--force` 之外不改写
-- [ ] **LOCL-03**: 用户可显式开启符号链接同步（默认仍拒绝），链接目标必须解析在文档根内；关闭时行为与 v1.0 一致
-- [ ] **LOCL-04**: 用户可用 `diff <commit> [path]` 查看本项目前缀下某历史版本的差异，输出可直读也可 `--json`，只读镜像不触网
+- [x] **LOCL-01**: 用户可在文档根放置 `.docignore`（不提交、不推送、不进 status），支持 basename 与目录前缀两种模式，叠加在内置垃圾列表之上，并作用于 status/push/pull 三处
+- [x] **LOCL-02**: 用户可为一个项目配置多个文档目录（config 从单 `docs_dir` 升级为目录列表），每目录独立映射到 `<project_id>/<prefix>`；旧单目录 config 自动迁移，`--force` 之外不改写
+- [x] **LOCL-03**: 用户可显式开启符号链接同步（默认仍拒绝），链接目标必须解析在文档根内；关闭时行为与 v1.0 一致
+- [x] **LOCL-04**: 用户可用 `diff <commit> [path]` 查看本项目前缀下某历史版本的差异，输出可直读也可 `--json`，只读镜像不触网
 
 ### 跨仓库聚合
 
-- [ ] **WORK-01**: 用户可用 `status --root <dir>` 发现根目录下深度 ≤2 的已初始化仓库（凭 `<git>/doc-connector/config.yaml`），逐仓汇总 `project_id`、`docs_dir`、state、ahead/behind、冲突数；无 config 的仓库静默跳过并单独计数
-- [ ] **WORK-02**: 用户可用 `sync --root <dir>` 批量同步：逐仓串行，clean→跳过、behind→pull、ahead→push、diverged 或存在冲突→标记 `blocked` 并跳过（绝不自动 resolve）、单仓失败→记录后继续；退出码取最坏值；`--dry-run` 零写入
+- [x] **WORK-01**: 用户可用 `status --root <dir>` 发现根目录下深度 ≤2 的已初始化仓库（凭 `<git>/doc-connector/config.yaml`），逐仓汇总 `project_id`、`docs_dir`、state、ahead/behind、冲突数；无 config 的仓库静默跳过并单独计数
+- [x] **WORK-02**: 用户可用 `sync --root <dir>` 批量同步：逐仓串行，clean→跳过、behind→pull、ahead→push、diverged 或存在冲突→标记 `blocked` 并跳过（绝不自动 resolve）、单仓失败→记录后继续；退出码取最坏值；`--dry-run` 零写入
 - [ ] **WORK-03**: 用户可用 `tui` 看到跨仓库汇总屏并完成冲突分诊（选仓库→看冲突→选 local/remote→调 `push --resolve`/`restore --force`）；TUI 层零 git 调用，全部复用 `internal/app`
 
 ### 分发与集成
 
-- [ ] **DIST-01**: tag 发布时自动产出 Homebrew cask（`LZD121/homebrew-tap`）、Scoop 清单与 winget 清单；cask 上传在 `HOMEBREW_TAP_GITHUB_TOKEN` 存在时生效，缺失时只生成到 `dist/` 且发布保持绿色
+- [ ] **DIST-01**: tag 发布时自动产出 Homebrew cask（`LZD121/homebrew-tap`）与 Scoop 清单（`LZD121/scoop-bucket`）；上传在对应 token 存在时生效，缺失时只生成到 `dist/` 且发布保持绿色。winget 清单暂缓：仓库没有 LICENSE 文件，而 winget 清单要求 license 字段——选许可证属于所有者决定，不由工具替用户选
 - [ ] **DIST-02**: 用户可用 `doc-connector completion bash|zsh|fish` 生成补全脚本，覆盖六个子命令与新增标志
 
 ## Future Requirements
@@ -40,6 +40,7 @@ Acknowledged, not in this roadmap.
 
 ### 分发
 
+- **DIST-04**: winget 清单与 winget-pkgs PR — 阻塞于许可证选择：先在仓库根添加 LICENSE（如 MIT），再补 `.goreleaser.yaml` 的 `winget:` 段并验证 `goreleaser check` 与快照产物
 - **DIST-03**: 自动创建私有远端仓库（`gh`/`bb` CLI 或 API token）— 暂缓：需要 provider token、组织策略与可见性决策；`research/FEATURES.md` 将其列为 anti-feature，`PROJECT.md` Out of Scope 记为“由用户手动建空私有仓库”。重启条件：出现需要一条命令完成引导的真实场景，且 `gh auth status` 可被无副作用探测
 
 ### 运维
@@ -76,12 +77,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OBS-01 | Phase 6 | Complete |
 | OBS-02 | Phase 6 | Complete |
 | OBS-03 | Phase 6 | Complete |
-| LOCL-01 | Phase 7 | Pending |
-| LOCL-02 | Phase 7 | Pending |
-| LOCL-03 | Phase 7 | Pending |
-| LOCL-04 | Phase 7 | Pending |
-| WORK-01 | Phase 8 | Pending |
-| WORK-02 | Phase 8 | Pending |
+| LOCL-01 | Phase 7 | Complete |
+| LOCL-02 | Phase 7 | Complete |
+| LOCL-03 | Phase 7 | Complete |
+| LOCL-04 | Phase 7 | Complete |
+| WORK-01 | Phase 8 | Complete |
+| WORK-02 | Phase 8 | Complete |
 | DIST-01 | Phase 9 | Pending |
 | DIST-02 | Phase 9 | Pending |
 | WORK-03 | Phase 10 | Pending |

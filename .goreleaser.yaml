@@ -61,3 +61,16 @@ homebrew_casks:
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
+
+scoops:
+  - name: doc-connector
+    repository:
+      owner: LZD121
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/LZD121/doc-connector
+    description: Sync a private docs directory to your own private git repository
+    # Same rule as the cask: without a bucket token the manifest is generated
+    # into dist/ and the release stays green.
+    skip_upload: '{{ if index .Env "SCOOP_BUCKET_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'

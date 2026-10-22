@@ -15,6 +15,7 @@ Commands:
   restore   Write a historical version of a path back to the docs directory
   doctor    Diagnose the repository, exclude block, lock and remote (read-only)
   sync      Pull or push every initialized repository under a directory, one at a time
+  completion  Print a shell completion script (bash, zsh, fish)
 
 Flags:
   -h, --help     Show this help
