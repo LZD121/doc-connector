@@ -74,7 +74,7 @@ func TestCommandHelpAndStubs(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"push", "log", "restore"} {
+	for _, name := range []string{"log", "restore"} {
 		code, out, errOut := run(t, dir, name)
 		if code != CodeUsage {
 			t.Errorf("%s: code = %d, want 2", name, code)
@@ -87,7 +87,7 @@ func TestCommandHelpAndStubs(t *testing.T) {
 		}
 	}
 	uninitialized := newRepo(t)
-	for _, name := range []string{"status", "pull"} {
+	for _, name := range []string{"status", "pull", "push"} {
 		code, _, errOut := run(t, uninitialized, name)
 		if code != CodeUsage || !strings.Contains(errOut, "not initialized") {
 			t.Errorf("%s outside an initialized repo: code=%d stderr=%q", name, code, errOut)
@@ -606,5 +606,336 @@ func TestPullRejectsUnsafeRemotePaths(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, "private-docs", "NUL.txt")); !os.IsNotExist(err) {
 		t.Error("unsafe path was written")
+	}
+}
+
+func remoteDir(url string) string { return strings.TrimPrefix(url, "file://") }
+
+func TestPushEndToEnd(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	pid := projectID(t, repo)
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := run(t, repo, "push")
+	if code != 0 || !strings.Contains(out, "pushed:") {
+		t.Fatalf("push: code=%d out=%q err=%q", code, out, errOut)
+	}
+	rp := remoteDir(remote)
+	if got := git(t, rp, "show", "main:"+pid+"/a.md"); strings.TrimSpace(got) != "one" {
+		t.Errorf("remote content = %q", got)
+	}
+	st, _ := state.Load(filepath.Join(repo, ".git"))
+	if st.SyncedCommit == "" {
+		t.Fatal("baseline not advanced after push")
+	}
+	msg := git(t, rp, "log", "-1", "--format=%B", "main")
+	for _, trailer := range []string{"Doc-Connector-Project: " + pid, "Doc-Connector-Machine: ", "Doc-Connector-Files: "} {
+		if !strings.Contains(msg, trailer) {
+			t.Errorf("commit message missing %q:\n%s", trailer, msg)
+		}
+	}
+
+	// Another project's root entry must survive.
+	pushRemoteFiles(t, remote, map[string]string{"other-project/r.md": "keep"}, nil)
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("second push: %s", errOut)
+	}
+	if got := git(t, rp, "show", "main:other-project/r.md"); strings.TrimSpace(got) != "keep" {
+		t.Errorf("other project entry lost: %q", got)
+	}
+
+	// No local change: no-op, byte-identical state.
+	before, _ := state.Load(filepath.Join(repo, ".git"))
+	code, out, errOut = run(t, repo, "push")
+	if code != 0 || !strings.Contains(out, "no changes") {
+		t.Fatalf("no-op push: code=%d out=%q err=%q", code, out, errOut)
+	}
+	after, _ := state.Load(filepath.Join(repo, ".git"))
+	if after.SyncedCommit != before.SyncedCommit {
+		t.Error("no-op push moved the baseline")
+	}
+}
+
+func TestPushClobberAfterOtherMachine(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init A: %s", errOut)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("A1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push A: %s", errOut)
+	}
+
+	clone := filepath.Join(t.TempDir(), "machine-b")
+	git(t, t.TempDir(), "clone", "-q", "file://"+repo, clone)
+	if code, _, errOut := run(t, clone, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init B: %s", errOut)
+	}
+	if code, _, errOut := run(t, clone, "pull"); code != 0 {
+		t.Fatalf("pull B: %s", errOut)
+	}
+	if err := os.WriteFile(filepath.Join(clone, "private-docs", "a.md"), []byte("B1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, clone, "push"); code != 0 {
+		t.Fatalf("push B: %s", errOut)
+	}
+
+	// A has not seen B's version; pushing its own change must refuse.
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("A2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := state.Load(filepath.Join(repo, ".git"))
+	code, _, errOut := run(t, repo, "push")
+	if code != CodeConflict {
+		t.Fatalf("clobber push code = %d, want 1; stderr=%q", code, errOut)
+	}
+	if !strings.Contains(errOut, "pull") {
+		t.Errorf("stderr = %q", errOut)
+	}
+	after, _ := state.Load(filepath.Join(repo, ".git"))
+	if after.SyncedCommit != before.SyncedCommit {
+		t.Error("baseline advanced after a refused push")
+	}
+}
+
+func TestPushResolve(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	pid := projectID(t, repo)
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push: %s", errOut)
+	}
+	// Local edit plus a remote edit of the same path is the conflict case.
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("A-local"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pushRemoteFiles(t, remote, map[string]string{pid + "/a.md": "B"}, nil)
+
+	code, _, errOut := run(t, repo, "pull")
+	if code != CodeConflict || !strings.Contains(errOut, "conflicting") {
+		t.Fatalf("conflict pull: code=%d stderr=%q", code, errOut)
+	}
+	if data, _ := os.ReadFile(filepath.Join(docs, "a.md")); string(data) != "A-local" {
+		t.Errorf("local content changed: %q", data)
+	}
+	artifacts, _ := filepath.Glob(filepath.Join(docs, "a.md.theirs.*"))
+	if len(artifacts) != 1 {
+		t.Fatalf("artifacts = %v", artifacts)
+	}
+	if data, _ := os.ReadFile(artifacts[0]); string(data) != "B" {
+		t.Errorf("artifact content = %q", data)
+	}
+	st, _ := state.Load(filepath.Join(repo, ".git"))
+	if len(st.Unresolved) != 1 || st.Unresolved[0].Path != "a.md" {
+		t.Fatalf("unresolved = %+v", st.Unresolved)
+	}
+
+	code, out, _ := run(t, repo, "status")
+	if strings.Contains(out, ".theirs.") {
+		t.Errorf("status treated an artifact as a document: %q", out)
+	}
+
+	if code, _, errOut := run(t, repo, "push", "--resolve", "a.md"); code != 0 {
+		t.Fatalf("resolve push: %s", errOut)
+	}
+	if got := git(t, remoteDir(remote), "show", "main:"+pid+"/a.md"); strings.TrimSpace(got) != "A-local" {
+		t.Errorf("remote content after resolve = %q", got)
+	}
+	if remaining, _ := filepath.Glob(filepath.Join(docs, "a.md.theirs.*")); len(remaining) != 0 {
+		t.Errorf("artifact not removed: %v", remaining)
+	}
+	st, _ = state.Load(filepath.Join(repo, ".git"))
+	if len(st.Unresolved) != 0 {
+		t.Errorf("unresolved not cleared: %+v", st.Unresolved)
+	}
+}
+
+func TestPushDryRun(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := state.Load(filepath.Join(repo, ".git"))
+
+	code, out, errOut := run(t, repo, "push", "--dry-run")
+	if code != 0 || !strings.Contains(out, "dry-run: would commit") {
+		t.Fatalf("dry-run: code=%d out=%q err=%q", code, out, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git", "doc-connector", "store.git", "refs", "heads", "main")); !os.IsNotExist(err) {
+		t.Error("dry-run created a remote branch ref")
+	}
+	after, _ := state.Load(filepath.Join(repo, ".git"))
+	if after.SyncedCommit != before.SyncedCommit {
+		t.Error("dry-run advanced the baseline")
+	}
+	if data, _ := os.ReadFile(filepath.Join(docs, "a.md")); string(data) != "one" {
+		t.Error("dry-run changed docs")
+	}
+}
+
+func TestPullConflictShapes(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	pid := projectID(t, repo)
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"keep.md", "gone.md", "localdel.md"} {
+		if err := os.WriteFile(filepath.Join(docs, name), []byte("base"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push: %s", errOut)
+	}
+
+	// local modified + remote deleted -> no artifact, unresolved only
+	if err := os.WriteFile(filepath.Join(docs, "keep.md"), []byte("local"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// local add + remote add of the same path -> add/add artifact
+	if err := os.WriteFile(filepath.Join(docs, "new.md"), []byte("local-new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// local deleted + remote modified -> artifact in original parent
+	if err := os.Remove(filepath.Join(docs, "localdel.md")); err != nil {
+		t.Fatal(err)
+	}
+	pushRemoteFiles(t, remote, map[string]string{
+		pid + "/gone.md":     "remote-new",
+		pid + "/localdel.md": "remote-mod",
+		pid + "/new.md":      "remote-new-file",
+	}, []string{pid + "/keep.md"})
+
+	code, _, errOut := run(t, repo, "pull")
+	if code != CodeConflict {
+		t.Fatalf("code = %d, want 1; stderr=%q", code, errOut)
+	}
+	if data, _ := os.ReadFile(filepath.Join(docs, "keep.md")); string(data) != "local" {
+		t.Errorf("locally modified file changed: %q", data)
+	}
+	if artifacts, _ := filepath.Glob(filepath.Join(docs, "keep.md.theirs.*")); len(artifacts) != 0 {
+		t.Errorf("modify/delete wrote an artifact: %v", artifacts)
+	}
+	if _, err := os.Stat(filepath.Join(docs, "localdel.md")); !os.IsNotExist(err) {
+		t.Error("locally deleted file was resurrected")
+	}
+	artifacts, _ := filepath.Glob(filepath.Join(docs, "localdel.md.theirs.*"))
+	if len(artifacts) != 1 {
+		t.Fatalf("delete/modify artifact = %v", artifacts)
+	}
+	if data, _ := os.ReadFile(artifacts[0]); string(data) != "remote-mod" {
+		t.Errorf("artifact content = %q", data)
+	}
+	addAdd, _ := filepath.Glob(filepath.Join(docs, "new.md.theirs.*"))
+	if len(addAdd) != 1 {
+		t.Fatalf("add/add artifact = %v", addAdd)
+	}
+	if data, _ := os.ReadFile(addAdd[0]); string(data) != "remote-new-file" {
+		t.Errorf("add/add artifact content = %q", data)
+	}
+
+	// A second pull must not stack another artifact on the same path.
+	code, _, _ = run(t, repo, "pull")
+	if code != CodeConflict {
+		t.Fatalf("second pull code = %d, want 1", code)
+	}
+	if again, _ := filepath.Glob(filepath.Join(docs, "localdel.md.theirs.*")); len(again) != 1 {
+		t.Errorf("duplicate artifacts after second pull: %v", again)
+	}
+}
+
+func TestTwoProjectsSameRemote(t *testing.T) {
+	isolateGit(t)
+	remote := emptyBareRemote(t)
+
+	repoA := newRepo(t)
+	if code, _, errOut := run(t, repoA, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init A: %s", errOut)
+	}
+	pidA := projectID(t, repoA)
+	if err := os.MkdirAll(filepath.Join(repoA, "private-docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoA, "private-docs", "a.md"), []byte("A"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repoA, "push"); code != 0 {
+		t.Fatalf("push A: %s", errOut)
+	}
+
+	repoB := newRepo(t)
+	git(t, repoB, "commit", "--amend", "-q", "-m", "unique root for project B")
+	if code, _, errOut := run(t, repoB, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init B: %s", errOut)
+	}
+	pidB := projectID(t, repoB)
+	if pidB == pidA {
+		t.Fatal("two different repositories derived the same id")
+	}
+	if err := os.MkdirAll(filepath.Join(repoB, "private-docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoB, "private-docs", "b.md"), []byte("B"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repoB, "push"); code != 0 {
+		t.Fatalf("push B: %s", errOut)
+	}
+
+	rp := remoteDir(remote)
+	if got := git(t, rp, "show", "main:"+pidA+"/a.md"); strings.TrimSpace(got) != "A" {
+		t.Errorf("A prefix lost: %q", got)
+	}
+	if got := git(t, rp, "show", "main:"+pidB+"/b.md"); strings.TrimSpace(got) != "B" {
+		t.Errorf("B prefix missing: %q", got)
 	}
 }

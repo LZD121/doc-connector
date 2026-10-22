@@ -88,7 +88,7 @@ func dispatch(ctx context.Context, e *runnerEnv, args []string) (int, error) {
 	case "status":
 		return CodeOK, cmdStatus(ctx, e, rest)
 	case "push":
-		return CodeOK, stub(e, name, rest)
+		return CodeOK, cmdPush(ctx, e, rest)
 	case "pull":
 		return CodeOK, cmdPull(ctx, e, rest)
 	case "log":

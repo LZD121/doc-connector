@@ -31,9 +31,10 @@ const (
 
 // Env carries process dependencies for command orchestration.
 type Env struct {
-	Cwd    string
-	Stdout io.Writer
-	Stderr io.Writer
+	Cwd     string
+	Stdout  io.Writer
+	Stderr  io.Writer
+	Version string
 }
 
 // Error is an application failure with an exit code.

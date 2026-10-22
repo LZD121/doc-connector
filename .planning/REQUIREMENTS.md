@@ -22,34 +22,34 @@
 - [x] **SYNC-02**: 比较依据 git blob OID（内容哈希）；修改 mtime 或复制文件不产生假差异，同尺寸修改不会被漏报
 - [x] **SYNC-03**: 远端不可达时，`status` 仍报告本地与基线的状态，并明确标注“远端未检查”（退出 4）
 - [x] **SYNC-04**: status、push、pull 共用同一个三方分类实现；同一工作区状态下三者结论必须一致
-- [ ] **SYNC-05**: `push --dry-run` 与 `pull --dry-run` 输出将执行的动作，不写工作区、不写状态、不写远端
-- [ ] **SYNC-06**: 检测到 diverged（同一路径双方都改）时，push/pull 默认拒绝并退出 1，除非用户显式解决冲突
+- [x] **SYNC-05**: `push --dry-run` 与 `pull --dry-run` 输出将执行的动作，不写工作区、不写状态、不写远端
+- [x] **SYNC-06**: 检测到 diverged（同一路径双方都改）时，push/pull 默认拒绝并退出 1，除非用户显式解决冲突
 
 ### 推送
 
-- [ ] **PUSH-01**: `push` 把文档目录当前内容构造为 `<project_id>/` 子树并提交到私有仓库；不创建第二工作树，不触碰主仓库
-- [ ] **PUSH-02**: push 保留远端根树中其他项目的子树与根级文件，只替换本项目的顶层条目
-- [ ] **PUSH-03**: push 使用 `--force-with-lease`；非快进来自其他前缀时自动 fetch、重建并重试（最多 2 次），同前缀竞争则拒绝并提示 `pull`
-- [ ] **PUSH-04**: 本地无变更时 push 为空操作（不产生空提交），退出 0
-- [ ] **PUSH-05**: 只有推送成功后才把新 commit 记为基线；失败时保留 pending commit 供诊断，不推进基线
-- [ ] **PUSH-06**: 每个提交携带 `Doc-Connector-Project`、`Doc-Connector-Machine`、`Doc-Connector-Version` trailers
+- [x] **PUSH-01**: `push` 把文档目录当前内容构造为 `<project_id>/` 子树并提交到私有仓库；不创建第二工作树，不触碰主仓库
+- [x] **PUSH-02**: push 保留远端根树中其他项目的子树与根级文件，只替换本项目的顶层条目
+- [x] **PUSH-03**: push 使用 `--force-with-lease`；非快进来自其他前缀时自动 fetch、重建并重试（最多 2 次），同前缀竞争则拒绝并提示 `pull`
+- [x] **PUSH-04**: 本地无变更时 push 为空操作（不产生空提交），退出 0
+- [x] **PUSH-05**: 只有推送成功后才把新 commit 记为基线；失败时保留 pending commit 供诊断，不推进基线
+- [x] **PUSH-06**: 每个提交携带 `Doc-Connector-Project`、`Doc-Connector-Machine`、`Doc-Connector-Version` trailers
 
 ### 拉取
 
 - [x] **PULL-01**: `pull` fetch 远端并把新增、修改、删除安全应用到文档目录；目录外的任何文件保持不变
 - [x] **PULL-02**: 所有写操作先写临时文件、fsync、再原子 rename；中途失败可依据 journal 恢复到一致状态
-- [ ] **PULL-03**: 拉取前若本地存在与远端不同的同名文件（首次 pull 或基线缺失），保留本地并写 `<name>.theirs.<machine>`，退出 1
+- [x] **PULL-03**: 拉取前若本地存在与远端不同的同名文件（首次 pull 或基线缺失），保留本地并写 `<name>.theirs.<machine>`，退出 1
 - [x] **PULL-04**: pull 不删除“本地存在但基线中没有”的文件；删除仅对“基线存在、远端删除、本地未改”的路径生效
 - [x] **PULL-05**: pull 成功后推进基线；任何部分失败都不推进基线，并报告已应用与未应用的文件
 - [x] **PULL-06**: 远端树中的绝对路径、`..`、符号链接、Windows 保留名或超长路径被拒绝；整次操作失败且不写入任何文件
 
 ### 冲突解决
 
-- [ ] **CONF-01**: modify/modify 冲突保留本地文件，并写 `<name>.theirs.<machine>`（重名依次 `.2`、`.3`），退出 1
-- [ ] **CONF-02**: `.theirs.*` 产物被 status、push、pull 识别为冲突产物，不自动同步，也不计入普通变更
-- [ ] **CONF-03**: `push --resolve <path>` 以本地内容覆盖远端冲突版本，并删除对应冲突产物
+- [x] **CONF-01**: modify/modify 冲突保留本地文件，并写 `<name>.theirs.<machine>`（重名依次 `.2`、`.3`），退出 1
+- [x] **CONF-02**: `.theirs.*` 产物被 status、push、pull 识别为冲突产物，不自动同步，也不计入普通变更
+- [x] **CONF-03**: `push --resolve <path>` 以本地内容覆盖远端冲突版本，并删除对应冲突产物
 - [ ] **CONF-04**: `restore --force <path>` 以远端或指定历史版本覆盖本地，并删除对应冲突产物
-- [ ] **CONF-05**: modify/delete 冲突保留本地决定（保留文件或保留删除），列出冲突并退出 1，不自动选择
+- [x] **CONF-05**: modify/delete 冲突保留本地决定（保留文件或保留删除），列出冲突并退出 1，不自动选择
 
 ### 历史与恢复
 
@@ -136,25 +136,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNC-02 | Phase 3 | Complete |
 | SYNC-03 | Phase 3 | Complete |
 | SYNC-04 | Phase 3 | Complete |
-| SYNC-05 | Phase 4 | Pending |
-| SYNC-06 | Phase 3 | In progress (pull gate done; push gate in Phase 4) |
-| PUSH-01 | Phase 4 | Pending |
-| PUSH-02 | Phase 4 | Pending |
-| PUSH-03 | Phase 4 | Pending |
-| PUSH-04 | Phase 4 | Pending |
-| PUSH-05 | Phase 4 | Pending |
-| PUSH-06 | Phase 4 | Pending |
+| SYNC-05 | Phase 4 | Complete |
+| SYNC-06 | Phase 3 | Complete |
+| PUSH-01 | Phase 4 | Complete |
+| PUSH-02 | Phase 4 | Complete |
+| PUSH-03 | Phase 4 | Complete |
+| PUSH-04 | Phase 4 | Complete |
+| PUSH-05 | Phase 4 | Complete |
+| PUSH-06 | Phase 4 | Complete |
 | PULL-01 | Phase 3 | Complete |
 | PULL-02 | Phase 3 | Complete |
-| PULL-03 | Phase 4 | Pending |
+| PULL-03 | Phase 4 | Complete |
 | PULL-04 | Phase 3 | Complete |
 | PULL-05 | Phase 3 | Complete |
 | PULL-06 | Phase 3 | Complete |
-| CONF-01 | Phase 4 | Pending |
-| CONF-02 | Phase 4 | Pending |
-| CONF-03 | Phase 4 | Pending |
+| CONF-01 | Phase 4 | Complete |
+| CONF-02 | Phase 4 | Complete |
+| CONF-03 | Phase 4 | Complete |
 | CONF-04 | Phase 5 | Pending |
-| CONF-05 | Phase 4 | Pending |
+| CONF-05 | Phase 4 | Complete |
 | HIST-01 | Phase 5 | Pending |
 | HIST-02 | Phase 5 | Pending |
 | HIST-03 | Phase 5 | Pending |
