@@ -55,10 +55,9 @@ homebrew_casks:
     description: Sync a private docs directory to your own private git repository
     binaries:
       - doc-connector
-    # The tap repository and HOMEBREW_TAP_GITHUB_TOKEN do not exist yet, so the
-    # cask is generated into dist/ but not published. Change to `auto` once the
-    # tap repo exists and the secret is configured.
-    skip_upload: true
+    # Publish only when the tap token is configured; otherwise the cask is
+    # still generated into dist/ and the release stays green.
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}' 
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
