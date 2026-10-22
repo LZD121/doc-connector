@@ -123,16 +123,16 @@ func moveToTrash(src, trash string) error {
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
-		os.Remove(trash)
+		_ = os.Remove(trash)
 		return err
 	}
 	if err := out.Sync(); err != nil {
 		out.Close()
-		os.Remove(trash)
+		_ = os.Remove(trash)
 		return err
 	}
 	if err := out.Close(); err != nil {
-		os.Remove(trash)
+		_ = os.Remove(trash)
 		return err
 	}
 	return os.Remove(src)
@@ -183,7 +183,7 @@ func writeAtomicAbs(target, src string, mode os.FileMode) error {
 	tmp := f.Name()
 	if err := f.Chmod(mode); err != nil {
 		f.Close()
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	if _, err := io.Copy(f, in); err != nil {

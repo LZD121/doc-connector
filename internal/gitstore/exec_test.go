@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -92,6 +93,9 @@ func TestCleanEnv(t *testing.T) {
 }
 
 func TestRunnerUsesArgvWithoutShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture")
+	}
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out")
 	if err := os.Mkdir(out, 0o755); err != nil {
@@ -139,6 +143,9 @@ echo "git version 2.47.1"
 }
 
 func TestRunnerErrorCarriesStderrAndExitCode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "fake-git")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 'fatal: not a git repository' >&2\nexit 128\n"), 0o755); err != nil {

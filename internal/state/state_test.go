@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -29,8 +30,10 @@ func TestWriteFileAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("mode = %o, want 600", perm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("mode = %o, want 600", perm)
+		}
 	}
 	matches, _ := filepath.Glob(filepath.Join(dir, ".tmp-*"))
 	if len(matches) != 0 {

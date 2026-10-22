@@ -111,7 +111,7 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		}
 	}
 
-	if !(rc.Config.Project.Adoption == "local" && rc.State.SyncedCommit == "") {
+	if rc.Config.Project.Adoption != "local" || rc.State.SyncedCommit != "" {
 		if clobber := trees.Clobber(base, local, remote, resolved); len(clobber) > 0 {
 			return nil, errf(codeConflict, "push refused: %d remote path(s) have versions this machine has not seen: %s",
 				len(clobber), strings.Join(clobber, ", ")).

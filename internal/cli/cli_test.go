@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,7 @@ func TestRootSurface(t *testing.T) {
 }
 
 func TestCommandHelpAndStubs(t *testing.T) {
+	isolateGit(t)
 	dir := t.TempDir()
 	for _, name := range []string{"init", "status", "push", "pull", "log", "restore"} {
 		code, out, errOut := run(t, dir, name, "--help")
@@ -596,6 +598,9 @@ func TestPullFailureKeepsBaseline(t *testing.T) {
 }
 
 func TestPullRejectsUnsafeRemotePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot create reserved device names")
+	}
 	isolateGit(t)
 	repo := newRepo(t)
 	remote := emptyBareRemote(t)
@@ -769,7 +774,7 @@ func TestPushResolve(t *testing.T) {
 		t.Fatalf("unresolved = %+v", st.Unresolved)
 	}
 
-	code, out, _ := run(t, repo, "status")
+	_, out, _ := run(t, repo, "status")
 	if strings.Contains(out, ".theirs.") {
 		t.Errorf("status treated an artifact as a document: %q", out)
 	}
@@ -1124,7 +1129,19 @@ func TestRestoreForceResolvesConflict(t *testing.T) {
 	}
 }
 
+func requireCaseSensitiveFS(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "probe"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "PROBE")); err == nil {
+		t.Skip("filesystem folds case; distinct a.md/A.md cannot coexist")
+	}
+}
+
 func TestCaseCollisionRefused(t *testing.T) {
+	requireCaseSensitiveFS(t)
 	isolateGit(t)
 	repo := newRepo(t)
 	remote := emptyBareRemote(t)

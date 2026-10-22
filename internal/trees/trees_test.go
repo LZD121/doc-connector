@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -69,7 +70,7 @@ func TestReadTree(t *testing.T) {
 	if len(tree) != 2 {
 		t.Fatalf("tree = %v", tree)
 	}
-	if tree["notes/b.md"].Mode != 0o100755 {
+	if runtime.GOOS != "windows" && tree["notes/b.md"].Mode != 0o100755 {
 		t.Errorf("executable mode lost: %o", tree["notes/b.md"].Mode)
 	}
 	if tree["a.md"].OID == "" {

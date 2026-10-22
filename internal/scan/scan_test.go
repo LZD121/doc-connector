@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestScanContentIdentity(t *testing.T) {
 	if first.Ignored != 2 {
 		t.Errorf("ignored = %d, want 2", first.Ignored)
 	}
-	if first.Tree["script.sh"].Mode != 0o100755 {
+	if runtime.GOOS != "windows" && first.Tree["script.sh"].Mode != 0o100755 {
 		t.Errorf("executable mode = %o", first.Tree["script.sh"].Mode)
 	}
 

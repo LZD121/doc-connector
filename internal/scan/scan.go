@@ -59,7 +59,7 @@ func Scan(ctx context.Context, store *gitstore.Store, docsDir string, opts Optio
 	if err != nil {
 		return nil, err
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 
 	if opts.Filter == nil {
 		opts.Filter = ignore.New(nil)

@@ -21,7 +21,7 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	tmp := f.Name()
 	cleanup := func() {
 		f.Close()
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 	}
 	if err := f.Chmod(mode); err != nil {
 		cleanup()
@@ -36,11 +36,11 @@ func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("fsync %s: %w", tmp, err)
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("close %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
 	}
 	syncDir(dir)

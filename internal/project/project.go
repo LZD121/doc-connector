@@ -5,7 +5,9 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/LZD121/doc-connector/internal/gitstore"
@@ -125,8 +127,28 @@ func Discover(ctx context.Context, r *gitstore.Runner, dir string) (*Repo, error
 	}, nil
 }
 
+// samePath compares two paths as the filesystem sees them. git may report the
+// worktree through a symlinked prefix (/var vs /private/var on macOS) while the
+// git dir is canonical, and Windows may mix 8.3 short names with long ones.
 func samePath(a, b string) bool {
-	return filepath.Clean(a) == filepath.Clean(b)
+	if ai, err := os.Stat(a); err == nil {
+		if bi, err := os.Stat(b); err == nil {
+			return os.SameFile(ai, bi)
+		}
+	}
+	ca, cb := canonicalPath(a), canonicalPath(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(ca, cb)
+	}
+	return ca == cb
+}
+
+func canonicalPath(p string) string {
+	p = filepath.Clean(p)
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return p
 }
 
 func (e *Error) withHint(format string, args ...any) *Error {
