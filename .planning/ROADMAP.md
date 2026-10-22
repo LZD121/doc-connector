@@ -10,7 +10,7 @@ v1.0 把一个「裸仓库 + 一行 exclude」的手工脚本变成可信任的�
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: 契约、身份与基础设施** - 六命令骨架与退出码契约、git 执行缝隙、确定性 project_id、隐藏配置/状态与单实例锁
+- [x] **Phase 1: 契约、身份与基础设施** - 六命令骨架与退出码契约、git 执行缝隙、确定性 project_id、隐藏配置/状态与单实例锁
 - [ ] **Phase 2: 隔离护栏与 init** - `init` 端到端可用；隐身 exclude 与写前护栏保证文档永不进入主仓库
 - [ ] **Phase 3: 状态与干净拉取** - 三方分类器 + `status` 报告；`pull` 以 journal 与原子写安全应用增删改
 - [ ] **Phase 4: 冲突与推送** - 本地优先的冲突副本与显式解决；租约推送、子树拼接、重试与基线推进
@@ -123,7 +123,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 契约、身份与基础设施 | 0/4 | Not started | - |
+| 1. 契约、身份与基础设施 | 4/4 | Complete | 2026-10-22 |
 | 2. 隔离护栏与 init | 0/4 | Not started | - |
 | 3. 状态与干净拉取 | 0/5 | Not started | - |
 | 4. 冲突与推送 | 0/5 | Not started | - |

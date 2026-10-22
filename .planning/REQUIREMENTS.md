@@ -8,8 +8,8 @@
 ### 初始化与身份
 
 - [ ] **INIT-01**: 用户可在主仓库执行 `init --remote <url>` 完成关联；命令输出 project_id、远端分支、文档目录与下一步应执行的命令
-- [ ] **INIT-02**: 工具从根提交 OID 推导 `project_id = lower(root_hex)[:12]`；同一仓库的完整克隆在任意机器上得到相同 ID
-- [ ] **INIT-03**: 当仓库无根提交、有多个根提交、或为浅克隆且未提供 `--project-id` 时，init 拒绝执行（退出 2）并说明具体原因
+- [x] **INIT-02**: 工具从根提交 OID 推导 `project_id = lower(root_hex)[:12]`；同一仓库的完整克隆在任意机器上得到相同 ID
+- [x] **INIT-03**: 当仓库无根提交、有多个根提交、或为浅克隆且未提供 `--project-id` 时，init 拒绝执行（退出 2）并说明具体原因
 - [ ] **INIT-04**: `init --project-id <12hex>` 可显式指定 ID 并记录 `id_source: explicit`；当它与可推导 ID 不一致时必须同时提供 `--force`
 - [ ] **INIT-05**: init 把文档目录写入 `.git/info/exclude`（标记块，可重复执行），且从不修改 `.gitignore`
 - [ ] **INIT-06**: init 通过 `ls-remote` 探测远端默认分支并正确处理空远端；认证或网络失败以退出 4 报告
@@ -64,16 +64,16 @@
 - [ ] **GUARD-03**: 工具不得修改主仓库 index、HEAD、refs、hooks 或已跟踪文件；集成测试对比每次操作前后这些集合
 - [ ] **GUARD-04**: 所有文档读写限制在文档目录内（`os.Root` 语义），拒绝路径穿越与符号链接
 - [ ] **GUARD-05**: 检测大小写碰撞与 Unicode NFC/NFD 归一化冲突；冲突时拒绝整次操作并列出冲突路径
-- [ ] **GUARD-06**: 跨进程锁保证同一 project/store 同时只有一个写操作；锁竞争等待有限时间后退出 3
+- [x] **GUARD-06**: 跨进程锁保证同一 project/store 同时只有一个写操作；锁竞争等待有限时间后退出 3
 - [ ] **GUARD-07**: 文件替换失败时保留临时文件并报错，绝不回退为原地截断写
 - [ ] **GUARD-08**: 单文件超过 100MB 时拒绝同步（GitHub 硬限制）；超过 50MB 时警告但在 `--force` 下继续
 
 ### CLI 契约
 
-- [ ] **CLI-01**: `init`、`status`、`push`、`pull`、`log`、`restore` 六个子命令均提供 `--help`；根命令提供 `--version`
-- [ ] **CLI-02**: 退出码固定为 0 成功/无变更、1 冲突或需人工介入、2 用法/身份/环境错误、3 隔离或锁失败、4 网络或认证失败、130 中断
-- [ ] **CLI-03**: 正常结果写 stdout，诊断与错误写 stderr；任何命令都不发起交互式提问
-- [ ] **CLI-04**: 错误信息包含失败原因、退出码含义与相关路径；不输出未经验证的修复建议
+- [x] **CLI-01**: `init`、`status`、`push`、`pull`、`log`、`restore` 六个子命令均提供 `--help`；根命令提供 `--version`
+- [x] **CLI-02**: 退出码固定为 0 成功/无变更、1 冲突或需人工介入、2 用法/身份/环境错误、3 隔离或锁失败、4 网络或认证失败、130 中断
+- [x] **CLI-03**: 正常结果写 stdout，诊断与错误写 stderr；任何命令都不发起交互式提问
+- [x] **CLI-04**: 错误信息包含失败原因、退出码含义与相关路径；不输出未经验证的修复建议
 
 ### 跨平台与分发
 
@@ -125,9 +125,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | INIT-01 | Phase 2 | Pending |
-| INIT-02 | Phase 1 | Pending |
-| INIT-03 | Phase 1 | Pending |
-| INIT-04 | Phase 1 | Pending |
+| INIT-02 | Phase 1 | Complete |
+| INIT-03 | Phase 1 | Complete |
+| INIT-04 | Phase 1 | In progress (CLI persistence in Phase 2) |
 | INIT-05 | Phase 2 | Pending |
 | INIT-06 | Phase 2 | Pending |
 | INIT-07 | Phase 2 | Pending |
@@ -163,14 +163,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GUARD-03 | Phase 2 | Pending |
 | GUARD-04 | Phase 2 | Pending |
 | GUARD-05 | Phase 5 | Pending |
-| GUARD-06 | Phase 1 | Pending |
+| GUARD-06 | Phase 1 | Complete |
 | GUARD-07 | Phase 3 | Pending |
 | GUARD-08 | Phase 5 | Pending |
-| CLI-01 | Phase 1 | Pending |
-| CLI-02 | Phase 1 | Pending |
-| CLI-03 | Phase 1 | Pending |
-| CLI-04 | Phase 1 | Pending |
-| PLAT-01 | Phase 1 | Pending |
+| CLI-01 | Phase 1 | Complete |
+| CLI-02 | Phase 1 | Complete |
+| CLI-03 | Phase 1 | Complete |
+| CLI-04 | Phase 1 | Complete |
+| PLAT-01 | Phase 1 | Partial (cross-build ok; runtime matrix in Phase 5) |
 | PLAT-02 | Phase 5 | Pending |
 | PLAT-03 | Phase 5 | Pending |
 

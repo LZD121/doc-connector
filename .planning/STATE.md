@@ -1,12 +1,12 @@
 ---
 gsd_state_version: '1.0'
-status: planning
+status: executing
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 23
-  completed_plans: 0
-  percent: 0
+  completed_plans: 4
+  percent: 17
 ---
 
 # Project State
@@ -16,32 +16,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-22)
 
 **Core value:** 让私有文档在多台机器间可验证地同步，同时保证主仓库的历史与工作区永远不含它们。
-**Current focus:** Phase 1 — 契约、身份与基础设施
+**Current focus:** Phase 2 — 隔离护栏与 init
 
 ## Current Position
 
-Phase: 1 of 5 (契约、身份与基础设施)
+Phase: 2 of 5 (隔离护栏与 init)
 Plan: 0 of 4 in current phase
 Status: Ready to plan
-Last activity: 2026-10-22 — ROADMAP.md 与 REQUIREMENTS.md 追溯表创建完成
+Last activity: 2026-10-22 — Phase 1 完成：CLI 契约、git 执行缝隙、身份推导、配置/状态/锁
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: - min
-- Total execution time: 0.0 hours
+- Total plans completed: 4
+- Average duration: 19 min
+- Total execution time: 1.3 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 1. 契约、身份与基础设施 | 4 | 4 | 19 min |
 
 **Recent Trend:**
-- Last 5 plans: -
+- Last 5 plans: 18, 15, 20, 22
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -53,9 +53,10 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Roadmap]: 5 个粗粒度阶段，全部为端到端可用能力；`pull` 先于 `push`，因为 push 的安全前提是 `clobber` 与 `unresolved` 语义已存在。
-- [Roadmap]: 49 条 v1 需求各归属唯一阶段；`CONF-04`（`restore --force` 解除冲突）随 restore 落在 Phase 5。
-- [Roadmap]: Phase 1 只交付契约与基础设施，不落地 `init`；隔离护栏作为写路径的前置门放在 Phase 2。
+- [Phase 1]: 退出码采用 REQUIREMENTS CLI-02 闭集 {0,1,2,3,4,130}；研究文档中的 5 不采用。
+- [Phase 1]: 配置未知键保留并警告（STACK 方案），不调用 `KnownFields(true)`。
+- [Phase 1]: `init` 在 Phase 1 不写配置；完整 bootstrap 由 Phase 2 交付，避免“配置存在但文档未隐藏”的危险中间态。
+- [Phase 1]: 所有 git 调用 `GIT_TERMINAL_PROMPT=0`（CLI-03 禁止交互提问）。
 
 ### Pending Todos
 
@@ -66,7 +67,7 @@ None yet.
 - Phase 2：收养/分歧决策矩阵（本地有内容 × 远端前缀存在 × 基线缺失）需在规划时先定稿。
 - Phase 3：journal 恢复语义与 Windows 替换/锁定行为无法在 WSL2 完全验证，需 CI 矩阵实测后固化。
 - Phase 4：竞争重试状态机与 `pending` ref 在 `gc --auto` 下的存活保证需双 store 原型验证。
-- 研究遗留：已处理——`ARCHITECTURE.md` 与 `FEATURES.md` 的 identity 段落已统一为 `lower(root_hex)[:12]`，作废的 `sha256` 读法仅作为“禁止混用”的对照保留。
+- PLAT-01：三平台交叉构建已通过；运行时矩阵在 Phase 5 CI 落地后关闭。
 
 ## Deferred Items
 
@@ -79,5 +80,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-22
-Stopped at: v1.0 ROADMAP.md 创建完成，等待 Phase 1 规划
-Resume file: None
+Stopped at: Phase 1 验证通过（5/5），准备 Phase 2
+Resume file: .planning/phases/01-contracts-identity-infrastructure/01-VERIFICATION.md
