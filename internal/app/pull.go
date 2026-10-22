@@ -60,6 +60,12 @@ func Pull(ctx context.Context, env Env, opts PullOptions) (*PullResult, error) {
 		return nil, err
 	}
 	defer rc.Close()
+	// Dry-run takes the lock too: it reads the baseline and the remote tip.
+	release, err := acquireProjectLock(ctx, rc, "pull")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	if err := recoverJournal(ctx, rc); err != nil {
 		return nil, err

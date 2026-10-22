@@ -14,6 +14,7 @@ Commands:
   diff      Show a historical diff for a path in this project
   restore   Write a historical version of a path back to the docs directory
   doctor    Diagnose the repository, exclude block, lock and remote (read-only)
+  sync      Pull or push every initialized repository under a directory, one at a time
 
 Flags:
   -h, --help     Show this help
@@ -67,6 +68,7 @@ Reports clean/ahead/behind/diverged plus per-file three-way state. Read-only.
 Flags:
       --offline          Do not fetch the remote; report the cached remote tip
       --follow-symlinks  Synchronize symlink targets as regular files
+      --root <dir>       Report every initialized repository under <dir>
       --json             Print one JSON document
   -h, --help             Show this help
 `

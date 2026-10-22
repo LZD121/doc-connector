@@ -15,6 +15,7 @@ func cmdStatus(ctx context.Context, e *runnerEnv, args []string) error {
 	fs.SetOutput(io.Discard)
 	offline := fs.Bool("offline", false, "do not fetch the remote")
 	follow := fs.Bool("follow-symlinks", false, "synchronize symlink targets as regular files")
+	root := fs.String("root", "", "report every initialized repository under this directory")
 	jsonOut := fs.Bool("json", false, "print one JSON document")
 
 	helped, err := parseFlags(fs, args, e.Stdout, statusUsage)
@@ -26,6 +27,16 @@ func cmdStatus(ctx context.Context, e *runnerEnv, args []string) error {
 	}
 	if err := noPositional(fs); err != nil {
 		return err
+	}
+
+	if *root != "" {
+		// The aggregate mode reports every repository with its own defaults;
+		// silently ignoring a single-repository flag would misreport.
+		if *offline || *follow {
+			return Errorf(CodeUsage, "status: --root reports every repository, so --offline and --follow-symlinks do not apply").
+				WithHint("drop --root to report this repository only")
+		}
+		return cmdStatusRoot(ctx, e, *root, *jsonOut)
 	}
 
 	res, serr := app.Status(ctx, app.Env{Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr},

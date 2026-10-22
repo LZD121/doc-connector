@@ -39,6 +39,23 @@ type PushResult struct {
 	Resolved []string
 }
 
+// lockWait bounds how long a writer waits for the project lock before it
+// reports that another process is working (exit 3). Mirrors the init command.
+var lockWait = 10 * time.Second
+
+// acquireProjectLock takes the exclusive project lock for one command. The
+// returned release func is safe on nil and must be deferred by the caller so no
+// return path leaves the lock held.
+func acquireProjectLock(ctx context.Context, rc *RepoContext, cmd string) (func(), error) {
+	lockCtx, cancel := context.WithTimeout(ctx, lockWait)
+	defer cancel()
+	lock, err := state.Acquire(lockCtx, rc.Repo.GitDir, cmd, rc.Config.Machine)
+	if err != nil {
+		return nil, wrapErr(err, codeGuard)
+	}
+	return func() { _ = lock.Release() }, nil
+}
+
 // Push publishes the docs directory as <project_id>/.
 func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 	rc, err := Load(ctx, env, LoadOptions{CreateDocs: false})
@@ -46,6 +63,12 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		return nil, err
 	}
 	defer rc.Close()
+	// Dry-run takes the lock too: it reads the baseline and the remote tip.
+	release, err := acquireProjectLock(ctx, rc, "push")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if err := rc.requireRoots(); err != nil {
 		return nil, err
 	}

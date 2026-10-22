@@ -109,6 +109,8 @@ func dispatch(ctx context.Context, e *runnerEnv, args []string) (int, error) {
 		return CodeOK, cmdDiff(ctx, e, rest)
 	case "doctor":
 		return CodeOK, cmdDoctor(ctx, e, rest)
+	case "sync":
+		return CodeOK, cmdSync(ctx, e, rest)
 	default:
 		if strings.HasPrefix(name, "-") {
 			return CodeUsage, Errorf(CodeUsage, "unknown flag %q", name).
