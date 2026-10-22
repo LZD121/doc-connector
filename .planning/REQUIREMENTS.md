@@ -124,13 +124,71 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| INIT-01 | Phase 2 | Pending |
+| INIT-02 | Phase 1 | Pending |
+| INIT-03 | Phase 1 | Pending |
+| INIT-04 | Phase 1 | Pending |
+| INIT-05 | Phase 2 | Pending |
+| INIT-06 | Phase 2 | Pending |
+| INIT-07 | Phase 2 | Pending |
+| INIT-08 | Phase 2 | Pending |
+| SYNC-01 | Phase 3 | Pending |
+| SYNC-02 | Phase 3 | Pending |
+| SYNC-03 | Phase 3 | Pending |
+| SYNC-04 | Phase 3 | Pending |
+| SYNC-05 | Phase 4 | Pending |
+| SYNC-06 | Phase 3 | Pending |
+| PUSH-01 | Phase 4 | Pending |
+| PUSH-02 | Phase 4 | Pending |
+| PUSH-03 | Phase 4 | Pending |
+| PUSH-04 | Phase 4 | Pending |
+| PUSH-05 | Phase 4 | Pending |
+| PUSH-06 | Phase 4 | Pending |
+| PULL-01 | Phase 3 | Pending |
+| PULL-02 | Phase 3 | Pending |
+| PULL-03 | Phase 4 | Pending |
+| PULL-04 | Phase 3 | Pending |
+| PULL-05 | Phase 3 | Pending |
+| PULL-06 | Phase 3 | Pending |
+| CONF-01 | Phase 4 | Pending |
+| CONF-02 | Phase 4 | Pending |
+| CONF-03 | Phase 4 | Pending |
+| CONF-04 | Phase 5 | Pending |
+| CONF-05 | Phase 4 | Pending |
+| HIST-01 | Phase 5 | Pending |
+| HIST-02 | Phase 5 | Pending |
+| HIST-03 | Phase 5 | Pending |
+| GUARD-01 | Phase 2 | Pending |
+| GUARD-02 | Phase 2 | Pending |
+| GUARD-03 | Phase 2 | Pending |
+| GUARD-04 | Phase 2 | Pending |
+| GUARD-05 | Phase 5 | Pending |
+| GUARD-06 | Phase 1 | Pending |
+| GUARD-07 | Phase 3 | Pending |
+| GUARD-08 | Phase 5 | Pending |
+| CLI-01 | Phase 1 | Pending |
+| CLI-02 | Phase 1 | Pending |
+| CLI-03 | Phase 1 | Pending |
+| CLI-04 | Phase 1 | Pending |
+| PLAT-01 | Phase 1 | Pending |
+| PLAT-02 | Phase 5 | Pending |
+| PLAT-03 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 49 total
-- Mapped to phases: 0
-- Unmapped: 49 ⚠️
+- Mapped to phases: 49
+- Unmapped: 0 ✅
+
+**Per-phase distribution:**
+
+| Phase | Requirements | Count |
+|-------|--------------|-------|
+| Phase 1 — 契约、身份与基础设施 | CLI-01..04, INIT-02, INIT-03, INIT-04, GUARD-06, PLAT-01 | 9 |
+| Phase 2 — 隔离护栏与 init | INIT-01, INIT-05, INIT-06, INIT-07, INIT-08, GUARD-01..04 | 9 |
+| Phase 3 — 状态与干净拉取 | SYNC-01..04, SYNC-06, PULL-01, PULL-02, PULL-04, PULL-05, PULL-06, GUARD-07 | 11 |
+| Phase 4 — 冲突与推送 | SYNC-05, PULL-03, CONF-01, CONF-02, CONF-03, CONF-05, PUSH-01..06 | 12 |
+| Phase 5 — 历史、硬化与发布 | HIST-01..03, CONF-04, GUARD-05, GUARD-08, PLAT-02, PLAT-03 | 8 |
 
 ---
 *Requirements defined: 2026-10-22*
-*Last updated: 2026-10-22 after initial definition*
+*Last updated: 2026-10-22 after roadmap creation (all 49 v1 requirements mapped)*
