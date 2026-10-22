@@ -65,7 +65,7 @@
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | 独立私有 docs 仓库，不复用主仓库 | 主仓库是团队仓库，不能写入任何私人对象 | — Pending |
-| 项目标识 = 根提交 SHA 前 12 位 | 跨克隆确定性且不可变；`.git` 路径与本地 UUID 跨机器不一致，无法用于匹配 | — Pending |
+| 项目标识 = 根提交 OID 前 12 位十六进制字符（不再二次哈希） | 跨克隆确定性且不可变；`.git` 路径与本地 UUID 跨机器不一致，无法用于匹配。SHA-1 与 SHA-256 仓库同样适用；多根提交或浅克隆时拒绝并要求 `--project-id` | — Pending |
 | 多项目共用一个私有仓库，按 `<project_id>/` 前缀分目录 | 单处管理，避免仓库数量膨胀；哈希前缀天然避免重名 | — Pending |
 | 文档目录 `private-docs/` + `.git/info/exclude` | 主仓库 `git status` 保持干净，且不修改团队共享的 `.gitignore` | — Pending |
 | 配置存 `.git/doc-connector/config.yaml` | 用户要求完全不进仓库；代价是每台新机器重新 init | — Pending |

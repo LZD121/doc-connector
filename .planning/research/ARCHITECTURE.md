@@ -83,7 +83,7 @@
 |---|---|---|
 | 0 | 成功或无操作（push 无变化、pull 无动作） | `Plan` 为空；push 的 `Troot == tree(REMOTE)` |
 | 1 | 需要用户决策：diverged、冲突、adoption 歧义、restore 覆盖拒绝、远端历史被改写 | `Classify` 出现 `C`；push 的 `clobber` 集合非空；`unresolved` 非空时的 push |
-| 2 | 用法/配置：未知 flag、缺 `--remote`、浅克隆无 `--project-id`、git < 2.30、config schema 错误、内嵌凭据 | 启动阶段与 `config.Load` |
+| 2 | 用法/配置：未知 flag、缺 `--remote`、浅克隆或多根无 `--project-id`、git < 2.30、config schema 错误、内嵌凭据 | 启动阶段与 `config.Load` |
 | 3 | 安全/前置条件：docs 被跟踪、未被 ignore、docs 是 symlink、linked worktree、路径非法、大小写碰撞、锁被占用 | `project.Guard`、`fsx.Validate`、`state.Lock` |
 | 4 | 远端/网络/认证：fetch/push 失败、重试耗尽 | `gitstore` 的错误分类 |
 | 5 | 本地 I/O/完整性：rename/fsync 失败、对象缺失、超限文件、scan 中 OID 变化 | `fsx`、`trees`、`sync.Apply` |
