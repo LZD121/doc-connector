@@ -6,6 +6,8 @@ import "strings"
 // or authentication failures.
 var remoteMarkers = []string{
 	"could not read username",
+	"could not read from remote repository",
+	"does not appear to be a git repository",
 	"could not read password",
 	"permission denied",
 	"host key verification failed",

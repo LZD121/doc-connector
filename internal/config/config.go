@@ -31,6 +31,11 @@ const (
 	DefaultMaxPathChar = 240
 )
 
+// DefaultLimits returns the size and path ceilings used for a new config.
+func DefaultLimits() Limits {
+	return Limits{WarnBytes: DefaultWarnBytes, MaxBytes: DefaultMaxBytes, MaxPathChars: DefaultMaxPathChar}
+}
+
 // Project is the identity block.
 type Project struct {
 	ID           string `yaml:"id"`

@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LZD121/doc-connector/internal/config"
+	"github.com/LZD121/doc-connector/internal/gitstore"
+	"github.com/LZD121/doc-connector/internal/project"
 	"github.com/LZD121/doc-connector/internal/state"
 )
 
@@ -121,52 +124,221 @@ func newRepo(t *testing.T) string {
 	return dir
 }
 
-func TestInitResolvesIdentityAndRefusesBootstrap(t *testing.T) {
+func emptyBareRemote(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "remote.git")
+	git(t, t.TempDir(), "init", "--bare", "-q", "-b", "main", dir)
+	return "file://" + dir
+}
+
+func TestInitEndToEnd(t *testing.T) {
 	isolateGit(t)
 	repo := newRepo(t)
+	remote := emptyBareRemote(t)
 
-	code, out, errOut := run(t, repo, "init", "--remote", "file:///tmp/remote.git")
-	if code != CodeUsage {
-		t.Fatalf("code = %d, want 2; stderr=%q", code, errOut)
+	runner := gitstore.New(repo)
+	repoInfo, err := project.Discover(context.Background(), runner, repo)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(out, "project: ") || !strings.Contains(out, "derived") {
-		t.Errorf("stdout = %q, want resolved identity", out)
+	before, err := project.TakeSnapshot(context.Background(), runner, repoInfo)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(errOut, "not implemented yet") {
-		t.Errorf("stderr = %q", errOut)
+
+	code, out, errOut := run(t, repo, "init", "--remote", remote)
+	if code != 0 {
+		t.Fatalf("init failed: code=%d out=%q err=%q", code, out, errOut)
 	}
-	for _, name := range []string{"config.yaml", "state.json"} {
-		if _, err := os.Stat(filepath.Join(repo, ".git", "doc-connector", name)); !os.IsNotExist(err) {
-			t.Errorf("init wrote %s before bootstrap: %v", name, err)
+	for _, want := range []string{"project: ", "remote: ", "docs dir: private-docs", "base: none", "next: doc-connector push"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout missing %q:\n%s", want, out)
 		}
+	}
+
+	cfg, _, err := config.Load(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	if cfg.Remote != remote || cfg.Branch != "main" || cfg.DocsDir != "private-docs" {
+		t.Errorf("config = %+v", cfg)
+	}
+	if cfg.Project.IDSource != "derived" || len(cfg.Project.ID) != 12 {
+		t.Errorf("project = %+v", cfg.Project)
+	}
+
+	st, err := state.Load(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.ProjectID != cfg.Project.ID || st.SyncedCommit != "" {
+		t.Errorf("state = %+v", st)
+	}
+
+	// The team repository must look untouched and the docs must stay hidden.
+	status := git(t, repo, "status", "--porcelain")
+	if strings.Contains(status, "private-docs") || strings.Contains(status, "config.yaml") {
+		t.Errorf("git status shows hidden paths:\n%s", status)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".gitignore")); !os.IsNotExist(err) {
+		t.Error("init created .gitignore")
+	}
+
+	after, err := project.TakeSnapshot(context.Background(), runner, repoInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Errorf("init changed the team repository:\n before %+v\n after  %+v", before, after)
+	}
+
+	// Second run: byte-identical config/state and identical output.
+	cfgPath := filepath.Join(repo, ".git", "doc-connector", "config.yaml")
+	stPath := filepath.Join(repo, ".git", "doc-connector", "state.json")
+	cfgBefore, _ := os.ReadFile(cfgPath)
+	stBefore, _ := os.ReadFile(stPath)
+
+	code, out2, errOut2 := run(t, repo, "init", "--remote", remote)
+	if code != 0 {
+		t.Fatalf("second init failed: %q", errOut2)
+	}
+	if out2 != out {
+		t.Errorf("second init output differs:\n%s\n---\n%s", out, out2)
+	}
+	cfgAfter, _ := os.ReadFile(cfgPath)
+	stAfter, _ := os.ReadFile(stPath)
+	if string(cfgBefore) != string(cfgAfter) {
+		t.Errorf("config changed on re-run:\n%s\n---\n%s", cfgBefore, cfgAfter)
+	}
+	if string(stBefore) != string(stAfter) {
+		t.Errorf("state changed on re-run:\n%s\n---\n%s", stBefore, stAfter)
 	}
 }
 
-func TestInitRejectsMismatchedExplicitID(t *testing.T) {
+func TestInitAdoptsExistingPrefix(t *testing.T) {
 	isolateGit(t)
 	repo := newRepo(t)
-	derived := git(t, repo, "rev-list", "--max-parents=0", "HEAD")
-	derived = strings.ToLower(strings.TrimSpace(derived))[:12]
+	rootHex := strings.TrimSpace(git(t, repo, "rev-list", "--max-parents=0", "HEAD"))
+	pid := strings.ToLower(rootHex)[:12]
 
-	mismatch := "0123456789ab"
-	if mismatch == derived {
-		mismatch = "abcdefabcdef"
+	remote := emptyBareRemote(t)
+	seed := t.TempDir()
+	git(t, seed, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(seed, pid, "notes"), 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(seed, pid, "notes", "a.md"), []byte("remote"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, seed, "add", ".")
+	git(t, seed, "commit", "-q", "-m", "seed")
+	git(t, seed, "remote", "add", "origin", remote)
+	git(t, seed, "push", "-q", "origin", "main")
+	tip := strings.TrimSpace(git(t, seed, "rev-parse", "HEAD"))
 
-	code, _, errOut := run(t, repo, "init", "--remote", "file:///tmp/r.git", "--project-id", mismatch)
-	if code != CodeUsage {
-		t.Fatalf("code = %d, want 2", code)
+	code, out, errOut := run(t, repo, "init", "--remote", remote)
+	if code != 0 {
+		t.Fatalf("init failed: %s", errOut)
 	}
-	if !strings.Contains(errOut, derived) || !strings.Contains(errOut, mismatch) {
-		t.Errorf("stderr must name both ids: %q", errOut)
+	if !strings.Contains(out, "pull") || !strings.Contains(out, "not modified") {
+		t.Errorf("stdout = %q", out)
 	}
+	st, err := state.Load(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.SyncedCommit != tip || st.BaselineTree == "" {
+		t.Errorf("state did not adopt the prefix: %+v", st)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "private-docs")); !os.IsNotExist(err) {
+		t.Error("init modified local docs")
+	}
+}
 
-	code, out, errOut := run(t, repo, "init", "--remote", "file:///tmp/r.git", "--project-id", mismatch, "--force")
-	if code != CodeUsage || !strings.Contains(errOut, "not implemented yet") {
-		t.Fatalf("forced mismatch: code=%d stderr=%q", code, errOut)
+func TestInitSecondMachine(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	code, outA, errOut := run(t, repo, "init", "--remote", remote)
+	if code != 0 {
+		t.Fatalf("machine A init: %s", errOut)
 	}
-	if !strings.Contains(out, "explicit") {
-		t.Errorf("stdout = %q, want id_source explicit", out)
+	idA := firstProjectID(t, outA)
+
+	clone := filepath.Join(t.TempDir(), "clone")
+	git(t, t.TempDir(), "clone", "-q", "file://"+repo, clone)
+
+	code, outB, errOut := run(t, clone, "init", "--remote", remote)
+	if code != 0 {
+		t.Fatalf("machine B init: %s", errOut)
+	}
+	idB := firstProjectID(t, outB)
+	if idA != idB {
+		t.Errorf("project ids differ: A=%s B=%s", idA, idB)
+	}
+}
+
+func firstProjectID(t *testing.T, out string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "project: ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				return fields[1]
+			}
+		}
+	}
+	t.Fatalf("no project line in %q", out)
+	return ""
+}
+
+func TestInitRefusesTrackedDocs(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	if err := os.MkdirAll(filepath.Join(repo, "private-docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "private-docs", "secret.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", "-f", "private-docs/secret.md")
+	git(t, repo, "commit", "-q", "-m", "oops")
+
+	remote := emptyBareRemote(t)
+	code, _, errOut := run(t, repo, "init", "--remote", remote)
+	if code != CodeGuard {
+		t.Fatalf("code = %d, want 3; stderr=%q", code, errOut)
+	}
+	if !strings.Contains(errOut, "tracked") {
+		t.Errorf("stderr = %q", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git", "doc-connector", "config.yaml")); !os.IsNotExist(err) {
+		t.Error("config was written despite guard failure")
+	}
+}
+
+func TestInitRefusesForeignIgnoreSource(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("/private-docs/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	remote := emptyBareRemote(t)
+	code, _, errOut := run(t, repo, "init", "--remote", remote)
+	if code != CodeGuard {
+		t.Fatalf("code = %d, want 3; stderr=%q", code, errOut)
+	}
+	if !strings.Contains(errOut, ".gitignore") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
+func TestInitUnreachableRemoteExitsFour(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	code, _, errOut := run(t, repo, "init", "--remote", "file://"+filepath.Join(t.TempDir(), "missing.git"))
+	if code != CodeRemote {
+		t.Fatalf("code = %d, want 4; stderr=%q", code, errOut)
 	}
 }
 

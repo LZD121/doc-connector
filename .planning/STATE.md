@@ -3,10 +3,10 @@ gsd_state_version: '1.0'
 status: executing
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 23
-  completed_plans: 4
-  percent: 17
+  completed_plans: 8
+  percent: 35
 ---
 
 # Project State
@@ -16,32 +16,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-22)
 
 **Core value:** 让私有文档在多台机器间可验证地同步，同时保证主仓库的历史与工作区永远不含它们。
-**Current focus:** Phase 2 — 隔离护栏与 init
+**Current focus:** Phase 3 — 状态与干净拉取
 
 ## Current Position
 
-Phase: 2 of 5 (隔离护栏与 init)
-Plan: 0 of 4 in current phase
+Phase: 3 of 5 (状态与干净拉取)
+Plan: 0 of 5 in current phase
 Status: Ready to plan
-Last activity: 2026-10-22 — Phase 1 完成：CLI 契约、git 执行缝隙、身份推导、配置/状态/锁
+Last activity: 2026-10-22 — Phase 2 完成：exclude 受管块、隔离护栏、init 引导与幂等
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 8
 - Average duration: 19 min
-- Total execution time: 1.3 hours
+- Total execution time: 2.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. 契约、身份与基础设施 | 4 | 4 | 19 min |
+| 2. 隔离护栏与 init | 4 | 4 | 19 min |
 
 **Recent Trend:**
-- Last 5 plans: 18, 15, 20, 22
+- Last 5 plans: 18, 15, 20, 22, 12, 20, 18, 25
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -57,6 +58,8 @@ Recent decisions affecting current work:
 - [Phase 1]: 配置未知键保留并警告（STACK 方案），不调用 `KnownFields(true)`。
 - [Phase 1]: `init` 在 Phase 1 不写配置；完整 bootstrap 由 Phase 2 交付，避免“配置存在但文档未隐藏”的危险中间态。
 - [Phase 1]: 所有 git 调用 `GIT_TERMINAL_PROMPT=0`（CLI-03 禁止交互提问）。
+- [Phase 2]: init 的写顺序：护栏 → 锁 → 远端探测 → store → exclude → 完整护栏 → config/state；任何失败都不写 config。
+- [Phase 2]: 远端前缀存在时直接采用为基线并提示 pull；本地内容差异留给 Phase 3 分类器。
 
 ### Pending Todos
 
@@ -80,5 +83,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-22
-Stopped at: Phase 1 验证通过（5/5），准备 Phase 2
-Resume file: .planning/phases/01-contracts-identity-infrastructure/01-VERIFICATION.md
+Stopped at: Phase 2 验证通过（5/5），准备 Phase 3
+Resume file: .planning/phases/02-guardrails-and-init/02-VERIFICATION.md

@@ -7,14 +7,14 @@
 
 ### 初始化与身份
 
-- [ ] **INIT-01**: 用户可在主仓库执行 `init --remote <url>` 完成关联；命令输出 project_id、远端分支、文档目录与下一步应执行的命令
+- [x] **INIT-01**: 用户可在主仓库执行 `init --remote <url>` 完成关联；命令输出 project_id、远端分支、文档目录与下一步应执行的命令
 - [x] **INIT-02**: 工具从根提交 OID 推导 `project_id = lower(root_hex)[:12]`；同一仓库的完整克隆在任意机器上得到相同 ID
 - [x] **INIT-03**: 当仓库无根提交、有多个根提交、或为浅克隆且未提供 `--project-id` 时，init 拒绝执行（退出 2）并说明具体原因
-- [ ] **INIT-04**: `init --project-id <12hex>` 可显式指定 ID 并记录 `id_source: explicit`；当它与可推导 ID 不一致时必须同时提供 `--force`
-- [ ] **INIT-05**: init 把文档目录写入 `.git/info/exclude`（标记块，可重复执行），且从不修改 `.gitignore`
-- [ ] **INIT-06**: init 通过 `ls-remote` 探测远端默认分支并正确处理空远端；认证或网络失败以退出 4 报告
-- [ ] **INIT-07**: 当远端已存在 `<project_id>/` 时，init 采用该目录并提示用户先 `pull`，不覆盖本地任何文件
-- [ ] **INIT-08**: 配置写入 `.git/doc-connector/config.yaml`（remote、branch、docs_dir、project_id、machine、id_source）；重复执行 init 是幂等的
+- [x] **INIT-04**: `init --project-id <12hex>` 可显式指定 ID 并记录 `id_source: explicit`；当它与可推导 ID 不一致时必须同时提供 `--force`
+- [x] **INIT-05**: init 把文档目录写入 `.git/info/exclude`（标记块，可重复执行），且从不修改 `.gitignore`
+- [x] **INIT-06**: init 通过 `ls-remote` 探测远端默认分支并正确处理空远端；认证或网络失败以退出 4 报告
+- [x] **INIT-07**: 当远端已存在 `<project_id>/` 时，init 采用该目录并提示用户先 `pull`，不覆盖本地任何文件
+- [x] **INIT-08**: 配置写入 `.git/doc-connector/config.yaml`（remote、branch、docs_dir、project_id、machine、id_source）；重复执行 init 是幂等的
 
 ### 状态与三方比较
 
@@ -59,10 +59,10 @@
 
 ### 安全护栏
 
-- [ ] **GUARD-01**: 任何写操作前验证文档目录未被主仓库跟踪（`git ls-files -- <docs_dir>` 为空），否则退出 3
-- [ ] **GUARD-02**: 验证文档目录的 ignore 来源正好是 `.git/info/exclude`（`check-ignore -v`）；`.gitignore` 的反选规则不得冒充
-- [ ] **GUARD-03**: 工具不得修改主仓库 index、HEAD、refs、hooks 或已跟踪文件；集成测试对比每次操作前后这些集合
-- [ ] **GUARD-04**: 所有文档读写限制在文档目录内（`os.Root` 语义），拒绝路径穿越与符号链接
+- [x] **GUARD-01**: 任何写操作前验证文档目录未被主仓库跟踪（`git ls-files -- <docs_dir>` 为空），否则退出 3
+- [x] **GUARD-02**: 验证文档目录的 ignore 来源正好是 `.git/info/exclude`（`check-ignore -v`）；`.gitignore` 的反选规则不得冒充
+- [x] **GUARD-03**: 工具不得修改主仓库 index、HEAD、refs、hooks 或已跟踪文件；集成测试对比每次操作前后这些集合
+- [x] **GUARD-04**: 所有文档读写限制在文档目录内（`os.Root` 语义），拒绝路径穿越与符号链接
 - [ ] **GUARD-05**: 检测大小写碰撞与 Unicode NFC/NFD 归一化冲突；冲突时拒绝整次操作并列出冲突路径
 - [x] **GUARD-06**: 跨进程锁保证同一 project/store 同时只有一个写操作；锁竞争等待有限时间后退出 3
 - [ ] **GUARD-07**: 文件替换失败时保留临时文件并报错，绝不回退为原地截断写
@@ -124,14 +124,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INIT-01 | Phase 2 | Pending |
+| INIT-01 | Phase 2 | Complete |
 | INIT-02 | Phase 1 | Complete |
 | INIT-03 | Phase 1 | Complete |
-| INIT-04 | Phase 1 | In progress (CLI persistence in Phase 2) |
-| INIT-05 | Phase 2 | Pending |
-| INIT-06 | Phase 2 | Pending |
-| INIT-07 | Phase 2 | Pending |
-| INIT-08 | Phase 2 | Pending |
+| INIT-04 | Phase 1 | Complete |
+| INIT-05 | Phase 2 | Complete |
+| INIT-06 | Phase 2 | Complete |
+| INIT-07 | Phase 2 | Complete |
+| INIT-08 | Phase 2 | Complete |
 | SYNC-01 | Phase 3 | Pending |
 | SYNC-02 | Phase 3 | Pending |
 | SYNC-03 | Phase 3 | Pending |
@@ -158,10 +158,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HIST-01 | Phase 5 | Pending |
 | HIST-02 | Phase 5 | Pending |
 | HIST-03 | Phase 5 | Pending |
-| GUARD-01 | Phase 2 | Pending |
-| GUARD-02 | Phase 2 | Pending |
-| GUARD-03 | Phase 2 | Pending |
-| GUARD-04 | Phase 2 | Pending |
+| GUARD-01 | Phase 2 | Complete |
+| GUARD-02 | Phase 2 | Complete |
+| GUARD-03 | Phase 2 | Complete |
+| GUARD-04 | Phase 2 | Complete |
 | GUARD-05 | Phase 5 | Pending |
 | GUARD-06 | Phase 1 | Complete |
 | GUARD-07 | Phase 3 | Pending |
