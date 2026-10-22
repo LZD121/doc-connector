@@ -13,8 +13,10 @@ import (
 
 	"github.com/LZD121/doc-connector/internal/config"
 	"github.com/LZD121/doc-connector/internal/gitstore"
+	"github.com/LZD121/doc-connector/internal/ignore"
 	"github.com/LZD121/doc-connector/internal/machine"
 	"github.com/LZD121/doc-connector/internal/project"
+	"github.com/LZD121/doc-connector/internal/scan"
 	"github.com/LZD121/doc-connector/internal/state"
 )
 
@@ -210,8 +212,14 @@ func cmdInit(ctx context.Context, e *runnerEnv, args []string) error {
 	st.Branch = cfg.Branch
 	adopted := false
 	if st.SyncedCommit == "" && hasPrefix {
-		st.SyncedCommit = tip
-		st.BaselineTree = treeOID
+		// A fresh machine has no local documents yet: claiming the remote tip as
+		// the baseline would make pull classify every remote file as a local
+		// deletion and download nothing. Only adopt the baseline when local
+		// content exists; otherwise leave it empty so pull materializes the files.
+		if localHasFiles(ctx, store, repo.WorkTree, cfg.DocsDir) {
+			st.SyncedCommit = tip
+			st.BaselineTree = treeOID
+		}
 		adopted = true
 	}
 	if err := state.Save(repo.GitDir, st); err != nil {
@@ -279,6 +287,18 @@ func checkDocsDir(workTree, docsRel string) error {
 		return &project.Error{Code: 3, Msg: fmt.Sprintf("docs path %q is not a directory", docsRel)}
 	}
 	return nil
+}
+
+func localHasFiles(ctx context.Context, store *gitstore.Store, workTree, docsDir string) bool {
+	abs := filepath.Join(workTree, filepath.FromSlash(docsDir))
+	if info, err := os.Lstat(abs); err != nil || !info.IsDir() {
+		return false
+	}
+	res, err := scan.Scan(ctx, store, abs, scan.Options{Filter: ignore.New(nil)})
+	if err != nil {
+		return false
+	}
+	return len(res.Tree) > 0
 }
 
 func shortOID(oid string) string {

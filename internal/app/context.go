@@ -152,14 +152,23 @@ func (rc *RepoContext) Close() {
 	}
 }
 
+// ScanPolicy carries the size tiers for one scan.
+type ScanPolicy struct {
+	WarnBytes int64
+	MaxBytes  int64
+	Force     bool
+}
+
 // ScanLocal hashes the docs directory without writing blobs.
-func (rc *RepoContext) ScanLocal(ctx context.Context) (*scan.Result, error) {
+func (rc *RepoContext) ScanLocal(ctx context.Context, policy ScanPolicy) (*scan.Result, error) {
 	if rc.Root == nil {
 		return &scan.Result{Tree: trees.Tree{}}, nil
 	}
 	res, err := scan.Scan(ctx, rc.Store, rc.DocsDir, scan.Options{
-		Filter:   rc.Filter,
-		MaxBytes: rc.Config.Limits.MaxBytes,
+		Filter:    rc.Filter,
+		MaxBytes:  policy.MaxBytes,
+		WarnBytes: policy.WarnBytes,
+		Force:     policy.Force,
 	})
 	if err != nil {
 		return nil, wrapErr(err, 1)
@@ -261,4 +270,9 @@ func wrapErr(err error, fallback int) error {
 		return &Error{Code: c.ExitCode(), Msg: c.Error(), Hint: c.HintText(), Err: err}
 	}
 	return &Error{Code: fallback, Msg: err.Error(), Err: err}
+}
+
+// validatePath applies the shared sync-path rules.
+func validatePath(rel string, budget int) error {
+	return fsx.ValidateSyncPath(rel, budget)
 }

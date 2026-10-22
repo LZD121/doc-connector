@@ -92,9 +92,9 @@ func dispatch(ctx context.Context, e *runnerEnv, args []string) (int, error) {
 	case "pull":
 		return CodeOK, cmdPull(ctx, e, rest)
 	case "log":
-		return CodeOK, stub(e, name, rest)
+		return CodeOK, cmdLog(ctx, e, rest)
 	case "restore":
-		return CodeOK, stub(e, name, rest)
+		return CodeOK, cmdRestore(ctx, e, rest)
 	default:
 		if strings.HasPrefix(name, "-") {
 			return CodeUsage, Errorf(CodeUsage, "unknown flag %q", name).
@@ -114,22 +114,6 @@ func versionLabel(e *runnerEnv) string {
 		return fmt.Sprintf("%s (%s)", v, e.Commit)
 	}
 	return v
-}
-
-// stub reports a documented-but-not-implemented command. It still parses flags
-// so --help works and unknown flags fail with a usage error.
-func stub(e *runnerEnv, name string, args []string) error {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	helped, err := parseFlags(fs, args, e.Stdout, commandUsage[name])
-	if err != nil {
-		return err
-	}
-	if helped {
-		return nil
-	}
-	return Errorf(CodeUsage, "%s: not implemented yet", name).
-		WithHint("this build only provides the CLI contract; the command lands in a later phase")
 }
 
 // parseFlags parses args, printing the command usage to stdout on -h/--help.

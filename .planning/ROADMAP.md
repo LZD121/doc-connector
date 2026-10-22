@@ -14,7 +14,7 @@ v1.0 把一个「裸仓库 + 一行 exclude」的手工脚本变成可信任的�
 - [x] **Phase 2: 隔离护栏与 init** - `init` 端到端可用；隐身 exclude 与写前护栏保证文档永不进入主仓库
 - [x] **Phase 3: 状态与干净拉取** - 三方分类器 + `status` 报告；`pull` 以 journal 与原子写安全应用增删改
 - [x] **Phase 4: 冲突与推送** - 本地优先的冲突副本与显式解决；租约推送、子树拼接、重试与基线推进
-- [ ] **Phase 5: 历史、硬化与发布** - 离线 `log`/`restore`、路径与体积边界、三平台 CI 与 GoReleaser 发布
+- [x] **Phase 5: 历史、硬化与发布** - 离线 `log`/`restore`、路径与体积边界、三平台 CI 与 GoReleaser 发布
 
 ## Phase Details
 
@@ -127,4 +127,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. 隔离护栏与 init | 4/4 | Complete | 2026-10-22 |
 | 3. 状态与干净拉取 | 5/5 | Complete | 2026-10-22 |
 | 4. 冲突与推送 | 5/5 | Complete | 2026-10-22 |
-| 5. 历史、硬化与发布 | 0/5 | Not started | - |
+| 5. 历史、硬化与发布 | 5/5 | Complete | 2026-10-22 |

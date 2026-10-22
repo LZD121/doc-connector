@@ -30,7 +30,7 @@ behavior_unverified: 0
 | 1 | `init --remote <url>` 输出 project_id/分支/文档目录/下一步；配置落在 `.git/doc-connector/config.yaml`；重复执行结果不变 | ✓ VERIFIED | `TestInitEndToEnd`：退出 0，stdout 含 project/remote/docs/base/next；config 含全部字段；第二次运行 config/state 字节相等且 stdout 相等；真实二进制冒烟同样通过 |
 | 2 | docs 不出现在 `git status`；`.gitignore` 字节不变；`.git/info/exclude` 只有一段受管块且重复 init 不重复追加 | ✓ VERIFIED | `TestInitEndToEnd` 断言 `git status --porcelain` 不含 private-docs/config.yaml 且 `.gitignore` 不存在；`TestEnsureExclude*` 断言幂等与 `.gitignore` 哈希不变；冒烟中 exclude 仅一个块 |
 | 3 | docs 被跟踪、或 ignore 来源不是 info/exclude 时退出 3 并打印来源/模式 | ✓ VERIFIED | `TestInitRefusesTrackedDocs`（exit 3，消息含 tracked 与路径）、`TestGuardIgnoredSource` / `TestInitRefusesForeignIgnoreSource`（exit 3，消息含 `.gitignore`）；来源检查按 `check-ignore -z` 的 4 字段解析 |
-| 4 | 空远端可引导；已有 `<project_id>/` 时采用并提示 pull，不修改本地文件；网络/认证失败退出 4 | ✓ VERIFIED | `TestStoreFetchEmptyRemote`、`TestInitEndToEnd`（base none → push）；`TestInitAdoptsExistingPrefix`（base=tip，stdout 含 pull 与 not modified，docs 未被创建）；`TestDetectBranch` 与 `TestInitUnreachableRemoteExitsFour`（exit 4） |
+| 4 | 空远端可引导；已有 `<project_id>/` 时采用并提示 pull，不修改本地文件；网络/认证失败退出 4 | ✓ VERIFIED | `TestStoreFetchEmptyRemote`、`TestInitEndToEnd`（base none → push）；`TestInitAdoptsExistingPrefix`（stdout 含 pull 与 not modified，docs 未被创建；无本地内容时基线留空，随后 pull 成功下载）；`TestDetectBranch` 与 `TestInitUnreachableRemoteExitsFour`（exit 4） |
 | 5 | 主仓库 index 哈希、HEAD、refs、hooks、已跟踪集合在 init 前后完全一致 | ✓ VERIFIED | `TestSnapshotStable`（exclude+store+fetch 前后五类状态相等）与 `TestInitEndToEnd` 中真实 init 前后 `TakeSnapshot` 全等 |
 
 **Score:** 5/5
@@ -57,4 +57,4 @@ linux/amd64、darwin/arm64、windows/amd64 交叉构建通过。
 ## Notes
 
 - 首次 init 不创建 docs 目录；`launch` 之后由用户创建或由 Phase 3 的 pull 创建。
-- adoption 在远端前缀存在时直接把基线设为远端 tip；本地内容差异留给 Phase 3 的 status/pull 分类器处理。
+- adoption 识别远端前缀并提示 pull；仅当本地已有文件时才把基线设为远端 tip。全新机器（docs 为空）保持基线为空，否则 pull 会把远端文件误判为“本地删除”而下载不到任何内容（Phase 3 发现并修正，`TestInitAdoptsExistingPrefix` 覆盖）。

@@ -48,14 +48,14 @@
 - [x] **CONF-01**: modify/modify 冲突保留本地文件，并写 `<name>.theirs.<machine>`（重名依次 `.2`、`.3`），退出 1
 - [x] **CONF-02**: `.theirs.*` 产物被 status、push、pull 识别为冲突产物，不自动同步，也不计入普通变更
 - [x] **CONF-03**: `push --resolve <path>` 以本地内容覆盖远端冲突版本，并删除对应冲突产物
-- [ ] **CONF-04**: `restore --force <path>` 以远端或指定历史版本覆盖本地，并删除对应冲突产物
+- [x] **CONF-04**: `restore --force <path>` 以远端或指定历史版本覆盖本地，并删除对应冲突产物
 - [x] **CONF-05**: modify/delete 冲突保留本地决定（保留文件或保留删除），列出冲突并退出 1，不自动选择
 
 ### 历史与恢复
 
-- [ ] **HIST-01**: `log` 离线读取本地镜像，显示时间、机器、提交摘要；`log --path <path>` 只显示影响该路径的提交
-- [ ] **HIST-02**: `restore <commit> <path>` 把指定历史版本写回文档目录；该路径存在未同步改动时拒绝，`--force` 才覆盖
-- [ ] **HIST-03**: restore 不自动提交；恢复结果作为一次普通本地变更，由后续 push 上传
+- [x] **HIST-01**: `log` 离线读取本地镜像，显示时间、机器、提交摘要；`log --path <path>` 只显示影响该路径的提交
+- [x] **HIST-02**: `restore <commit> <path>` 把指定历史版本写回文档目录；该路径存在未同步改动时拒绝，`--force` 才覆盖
+- [x] **HIST-03**: restore 不自动提交；恢复结果作为一次普通本地变更，由后续 push 上传
 
 ### 安全护栏
 
@@ -63,10 +63,10 @@
 - [x] **GUARD-02**: 验证文档目录的 ignore 来源正好是 `.git/info/exclude`（`check-ignore -v`）；`.gitignore` 的反选规则不得冒充
 - [x] **GUARD-03**: 工具不得修改主仓库 index、HEAD、refs、hooks 或已跟踪文件；集成测试对比每次操作前后这些集合
 - [x] **GUARD-04**: 所有文档读写限制在文档目录内（`os.Root` 语义），拒绝路径穿越与符号链接
-- [ ] **GUARD-05**: 检测大小写碰撞与 Unicode NFC/NFD 归一化冲突；冲突时拒绝整次操作并列出冲突路径
+- [x] **GUARD-05**: 检测大小写碰撞与 Unicode NFC/NFD 归一化冲突；冲突时拒绝整次操作并列出冲突路径
 - [x] **GUARD-06**: 跨进程锁保证同一 project/store 同时只有一个写操作；锁竞争等待有限时间后退出 3
 - [x] **GUARD-07**: 文件替换失败时保留临时文件并报错，绝不回退为原地截断写
-- [ ] **GUARD-08**: 单文件超过 100MB 时拒绝同步（GitHub 硬限制）；超过 50MB 时警告但在 `--force` 下继续
+- [x] **GUARD-08**: 单文件超过 100MB 时拒绝同步（GitHub 硬限制）；超过 50MB 时警告但在 `--force` 下继续
 
 ### CLI 契约
 
@@ -77,9 +77,9 @@
 
 ### 跨平台与分发
 
-- [ ] **PLAT-01**: 在 Linux、macOS、Windows 上构建并运行；不拼接 shell 字符串，全部通过 `exec.CommandContext` 参数切片调用 git
-- [ ] **PLAT-02**: Windows 下正确处理大小写不敏感、保留名与 MAX_PATH；macOS 下 NFD 归一化不产生重复条目
-- [ ] **PLAT-03**: GoReleaser 产出 linux/darwin/windows 的 amd64+arm64 归档与校验和；CI 在三平台矩阵运行测试
+- [x] **PLAT-01**: 在 Linux、macOS、Windows 上构建并运行；不拼接 shell 字符串，全部通过 `exec.CommandContext` 参数切片调用 git
+- [x] **PLAT-02**: Windows 下正确处理大小写不敏感、保留名与 MAX_PATH；macOS 下 NFD 归一化不产生重复条目
+- [x] **PLAT-03**: GoReleaser 产出 linux/darwin/windows 的 amd64+arm64 归档与校验和；CI 在三平台矩阵运行测试
 
 ## v2 Requirements
 
@@ -153,26 +153,26 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-01 | Phase 4 | Complete |
 | CONF-02 | Phase 4 | Complete |
 | CONF-03 | Phase 4 | Complete |
-| CONF-04 | Phase 5 | Pending |
+| CONF-04 | Phase 5 | Complete |
 | CONF-05 | Phase 4 | Complete |
-| HIST-01 | Phase 5 | Pending |
-| HIST-02 | Phase 5 | Pending |
-| HIST-03 | Phase 5 | Pending |
+| HIST-01 | Phase 5 | Complete |
+| HIST-02 | Phase 5 | Complete |
+| HIST-03 | Phase 5 | Complete |
 | GUARD-01 | Phase 2 | Complete |
 | GUARD-02 | Phase 2 | Complete |
 | GUARD-03 | Phase 2 | Complete |
 | GUARD-04 | Phase 2 | Complete |
-| GUARD-05 | Phase 5 | Pending |
+| GUARD-05 | Phase 5 | Complete |
 | GUARD-06 | Phase 1 | Complete |
 | GUARD-07 | Phase 3 | Complete |
-| GUARD-08 | Phase 5 | Pending |
+| GUARD-08 | Phase 5 | Complete |
 | CLI-01 | Phase 1 | Complete |
 | CLI-02 | Phase 1 | Complete |
 | CLI-03 | Phase 1 | Complete |
 | CLI-04 | Phase 1 | Complete |
-| PLAT-01 | Phase 1 | Partial (cross-build ok; runtime matrix in Phase 5) |
-| PLAT-02 | Phase 5 | Pending |
-| PLAT-03 | Phase 5 | Pending |
+| PLAT-01 | Phase 1 | Complete (CI matrix delivered in Phase 5) |
+| PLAT-02 | Phase 5 | Complete |
+| PLAT-03 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 49 total

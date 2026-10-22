@@ -74,24 +74,15 @@ func TestCommandHelpAndStubs(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"log", "restore"} {
-		code, out, errOut := run(t, dir, name)
-		if code != CodeUsage {
-			t.Errorf("%s: code = %d, want 2", name, code)
-		}
-		if out != "" {
-			t.Errorf("%s wrote to stdout: %q", name, out)
-		}
-		if !strings.Contains(errOut, "not implemented yet") {
-			t.Errorf("%s stderr = %q, want not-implemented", name, errOut)
-		}
-	}
 	uninitialized := newRepo(t)
-	for _, name := range []string{"status", "pull", "push"} {
+	for _, name := range []string{"status", "pull", "push", "log"} {
 		code, _, errOut := run(t, uninitialized, name)
 		if code != CodeUsage || !strings.Contains(errOut, "not initialized") {
 			t.Errorf("%s outside an initialized repo: code=%d stderr=%q", name, code, errOut)
 		}
+	}
+	if code, _, errOut := run(t, uninitialized, "restore"); code != CodeUsage || !strings.Contains(errOut, "expected") {
+		t.Errorf("restore without args: code=%d stderr=%q", code, errOut)
 	}
 }
 
@@ -254,11 +245,25 @@ func TestInitAdoptsExistingPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.SyncedCommit != tip || st.BaselineTree == "" {
-		t.Errorf("state did not adopt the prefix: %+v", st)
+	// A fresh machine has no local files, so init must not claim the remote tip
+	// as its baseline; otherwise pull would treat every remote file as locally
+	// deleted and download nothing.
+	if st.SyncedCommit != "" {
+		t.Errorf("init claimed a baseline without local content: %+v", st)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "private-docs")); !os.IsNotExist(err) {
 		t.Error("init modified local docs")
+	}
+
+	if code, _, errOut := run(t, repo, "pull"); code != 0 {
+		t.Fatalf("pull after adoption: %s", errOut)
+	}
+	if data, err := os.ReadFile(filepath.Join(repo, "private-docs", "notes", "a.md")); err != nil || string(data) != "remote" {
+		t.Errorf("pull did not materialize the prefix: %q, %v", data, err)
+	}
+	st, _ = state.Load(filepath.Join(repo, ".git"))
+	if st.SyncedCommit != tip {
+		t.Errorf("baseline not advanced by pull: %+v", st)
 	}
 }
 
@@ -937,5 +942,296 @@ func TestTwoProjectsSameRemote(t *testing.T) {
 	}
 	if got := git(t, rp, "show", "main:"+pidB+"/b.md"); strings.TrimSpace(got) != "B" {
 		t.Errorf("B prefix missing: %q", got)
+	}
+}
+
+func TestLogOffline(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "a.md"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push a: %s", errOut)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "b.md"), []byte("b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push b: %s", errOut)
+	}
+
+	// Break the remote URL: log must still work from the mirror.
+	cfg, _, err := config.Load(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Remote = "file://" + filepath.Join(t.TempDir(), "gone.git")
+	if err := config.Save(filepath.Join(repo, ".git"), cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := run(t, repo, "log")
+	if code != 0 {
+		t.Fatalf("log: %s", errOut)
+	}
+	if strings.Count(out, "sync from") != 2 {
+		t.Errorf("expected two commits:\n%s", out)
+	}
+	if !strings.Contains(out, "fetched:") {
+		t.Errorf("missing fetched age: %s", out)
+	}
+
+	code, out, errOut = run(t, repo, "log", "--path", "a.md", "--limit", "10")
+	if code != 0 {
+		t.Fatalf("log --path: %s", errOut)
+	}
+	if strings.Count(out, "sync from") != 1 {
+		t.Errorf("path filter returned %d commits:\n%s", strings.Count(out, "sync from"), out)
+	}
+}
+
+func TestRestoreHistory(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(docs, "a.md")
+	if err := os.WriteFile(target, []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push v1: %s", errOut)
+	}
+	st, _ := state.Load(filepath.Join(repo, ".git"))
+	first := st.SyncedCommit
+
+	if err := os.WriteFile(target, []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push v2: %s", errOut)
+	}
+	st, _ = state.Load(filepath.Join(repo, ".git"))
+	second := st.SyncedCommit
+
+	// Local equals the baseline, so restoring an older version is allowed.
+	code, out, errOut := run(t, repo, "restore", first, "a.md")
+	if code != 0 || !strings.Contains(out, "restored:") {
+		t.Fatalf("restore: code=%d out=%q err=%q", code, out, errOut)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "v1" {
+		t.Errorf("content = %q", data)
+	}
+	if after, _ := state.Load(filepath.Join(repo, ".git")); after.SyncedCommit != second {
+		t.Error("restore advanced the baseline")
+	}
+
+	// Dirty local content is refused without --force.
+	if err := os.WriteFile(target, []byte("dirty"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut = run(t, repo, "restore", first, "a.md")
+	if code != CodeConflict {
+		t.Fatalf("dirty restore code = %d, want 1; stderr=%q", code, errOut)
+	}
+	code, _, errOut = run(t, repo, "restore", first, "a.md", "--force")
+	if code != 0 {
+		t.Fatalf("forced restore: %s", errOut)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "v1" {
+		t.Errorf("forced content = %q", data)
+	}
+
+	// Restore a deleted file.
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "restore", first, "a.md"); code != 0 {
+		t.Fatalf("restore deleted: %s", errOut)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "v1" {
+		t.Errorf("restored deleted content = %q", data)
+	}
+
+	// --to writes outside the docs directory.
+	outDir := t.TempDir()
+	if code, _, errOut := run(t, repo, "restore", first, "a.md", "--to", outDir); code != 0 {
+		t.Fatalf("restore --to: %s", errOut)
+	}
+	if data, _ := os.ReadFile(filepath.Join(outDir, "a.md")); string(data) != "v1" {
+		t.Errorf("--to content = %q", data)
+	}
+}
+
+func TestRestoreForceResolvesConflict(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	pid := projectID(t, repo)
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(docs, "a.md")
+	if err := os.WriteFile(target, []byte("base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push: %s", errOut)
+	}
+	if err := os.WriteFile(target, []byte("local"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pushRemoteFiles(t, remote, map[string]string{pid + "/a.md": "remote"}, nil)
+	if code, _, _ := run(t, repo, "pull"); code != CodeConflict {
+		t.Fatalf("pull code = %d, want conflict", code)
+	}
+
+	code, out, errOut := run(t, repo, "restore", "a.md", "--force")
+	if code != 0 {
+		t.Fatalf("restore force: %s", errOut)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "remote" {
+		t.Errorf("content = %q", data)
+	}
+	if !strings.Contains(out, "cleared unresolved") {
+		t.Errorf("stdout = %q", out)
+	}
+	if artifacts, _ := filepath.Glob(filepath.Join(docs, "a.md.theirs.*")); len(artifacts) != 0 {
+		t.Errorf("artifact remains: %v", artifacts)
+	}
+	st, _ := state.Load(filepath.Join(repo, ".git"))
+	if len(st.Unresolved) != 0 {
+		t.Errorf("unresolved remains: %+v", st.Unresolved)
+	}
+}
+
+func TestCaseCollisionRefused(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.md", "A.md"} {
+		if err := os.WriteFile(filepath.Join(docs, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, _, errOut := run(t, repo, "push")
+	if code != CodeGuard {
+		t.Fatalf("code = %d, want 3; stderr=%q", code, errOut)
+	}
+	if !strings.Contains(errOut, "a.md") || !strings.Contains(errOut, "A.md") {
+		t.Errorf("stderr must list both paths: %q", errOut)
+	}
+}
+
+func TestSizeGate(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	cfg, _, err := config.Load(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Limits.WarnBytes = 10
+	cfg.Limits.MaxBytes = 20
+	if err := config.Save(filepath.Join(repo, ".git"), cfg); err != nil {
+		t.Fatal(err)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(docs, "f.bin")
+	if err := os.WriteFile(target, []byte(strings.Repeat("x", 15)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, errOut := run(t, repo, "push")
+	if code != CodeConflict || !strings.Contains(errOut, "--force") {
+		t.Fatalf("warn gate: code=%d stderr=%q", code, errOut)
+	}
+	if code, _, errOut := run(t, repo, "push", "--force"); code != 0 {
+		t.Fatalf("forced push: %s", errOut)
+	}
+
+	if err := os.WriteFile(target, []byte(strings.Repeat("y", 25)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := run(t, repo, "push", "--force"); code != CodeConflict {
+		t.Fatalf("hard gate code = %d, want 1", code)
+	}
+	if code, _, errOut := run(t, repo, "push", "--force", "--allow-large"); code != 0 {
+		t.Fatalf("allow-large push: %s", errOut)
+	}
+}
+
+func TestBytesRoundTrip(t *testing.T) {
+	isolateGit(t)
+	repo := newRepo(t)
+	remote := emptyBareRemote(t)
+	if code, _, errOut := run(t, repo, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init: %s", errOut)
+	}
+	docs := filepath.Join(repo, "private-docs")
+	if err := os.MkdirAll(filepath.Join(docs, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	crlf := []byte("line1\r\nline2\r\n\x00binary\xff")
+	utf16 := []byte{0xff, 0xfe, 'h', 0x00, 'i', 0x00}
+	if err := os.WriteFile(filepath.Join(docs, "nested", "crlf.txt"), crlf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(docs, "utf16.txt"), utf16, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, repo, "push"); code != 0 {
+		t.Fatalf("push: %s", errOut)
+	}
+
+	// A second machine pulls the same bytes from the remote.
+	clone := filepath.Join(t.TempDir(), "machine-b")
+	git(t, t.TempDir(), "clone", "-q", "file://"+repo, clone)
+	if code, _, errOut := run(t, clone, "init", "--remote", remote); code != 0 {
+		t.Fatalf("init B: %s", errOut)
+	}
+	if code, _, errOut := run(t, clone, "pull"); code != 0 {
+		t.Fatalf("pull B: %s", errOut)
+	}
+	docs = filepath.Join(clone, "private-docs")
+	gotCRLF, err := os.ReadFile(filepath.Join(docs, "nested", "crlf.txt"))
+	if err != nil || string(gotCRLF) != string(crlf) {
+		t.Errorf("CRLF/binary bytes changed: %q, %v", gotCRLF, err)
+	}
+	gotUTF16, err := os.ReadFile(filepath.Join(docs, "utf16.txt"))
+	if err != nil || string(gotUTF16) != string(utf16) {
+		t.Errorf("UTF-16 bytes changed: %q, %v", gotUTF16, err)
 	}
 }

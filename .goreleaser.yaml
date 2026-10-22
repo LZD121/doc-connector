@@ -1,0 +1,61 @@
+version: 2
+
+project_name: doc-connector
+
+builds:
+  - id: doc-connector
+    main: ./cmd/doc-connector
+    binary: doc-connector
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: doc-connector
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+homebrew_casks:
+  - name: doc-connector
+    repository:
+      owner: LZD121
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/LZD121/doc-connector
+    description: Sync a private docs directory to your own private git repository
+    binaries:
+      - doc-connector
+    skip_upload: auto
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"

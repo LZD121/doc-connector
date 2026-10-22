@@ -1,12 +1,12 @@
 ---
 gsd_state_version: '1.0'
-status: executing
+status: milestone-complete
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 23
-  completed_plans: 18
-  percent: 70
+  completed_plans: 23
+  percent: 100
 ---
 
 # Project State
@@ -16,23 +16,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-22)
 
 **Core value:** 让私有文档在多台机器间可验证地同步，同时保证主仓库的历史与工作区永远不含它们。
-**Current focus:** Phase 5 — 历史、硬化与发布
+**Current focus:** Milestone audit / close
 
 ## Current Position
 
 Phase: 5 of 5 (历史、硬化与发布)
-Plan: 0 of 5 in current phase
-Status: Ready to plan
-Last activity: 2026-10-22 — Phase 4 完成：冲突产物、push/lease/重试、resolve、dry-run
+Plan: 5 of 5 in current phase
+Status: All phases complete — ready for milestone audit
+Last activity: 2026-10-22 — Phase 5 完成：log/restore、路径与体积硬化、CI/GoReleaser
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
-- Average duration: 22 min
-- Total execution time: 6.6 hours
+- Total plans completed: 23
+- Average duration: 21 min
+- Total execution time: 8.1 hours
 
 **By Phase:**
 
@@ -42,9 +42,10 @@ Progress: [████████░░] 80%
 | 2. 隔离护栏与 init | 4 | 4 | 19 min |
 | 3. 状态与干净拉取 | 5 | 5 | 21 min |
 | 4. 冲突与推送 | 5 | 5 | 24 min |
+| 5. 历史、硬化与发布 | 5 | 5 | 18 min |
 
 **Recent Trend:**
-- Last 5 plans: 28, 25, 32, 14, 12
+- Last 5 plans: 18, 24, 20, 12, 15
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -66,6 +67,9 @@ Recent decisions affecting current work:
 - [Phase 3]: 远端分支消失且基线非空 → 退出 1，绝不删除本地文档。
 - [Phase 4]: 冲突副本只生成一次；已有 unresolved 的路径不再产生 `.2`。
 - [Phase 4]: push 的 clobber 包含远端删除；`--resolve` 仅对当前 unresolved 生效，成功后清产物。
+- [Phase 5]: log 记录用 0x1e 分帧（trailer 值含换行）。
+- [Phase 5]: 全新机器 init 不设基线，确保 pull 能下载远端内容。
+- [Phase 5]: 体积门两级：>50MB 需 --force，>100MB 需 --allow-large。
 
 ### Pending Todos
 
@@ -89,5 +93,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-22
-Stopped at: Phase 4 验证通过（5/5），准备 Phase 5
-Resume file: .planning/phases/04-conflicts-and-push/04-VERIFICATION.md
+Stopped at: Phase 5 验证通过（5/5），里程碑可审计
+Resume file: .planning/phases/05-history-hardening-release/05-VERIFICATION.md

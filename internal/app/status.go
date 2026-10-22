@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"runtime"
 
 	"github.com/LZD121/doc-connector/internal/state"
 	"github.com/LZD121/doc-connector/internal/trees"
@@ -32,7 +33,9 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 	}
 	defer rc.Close()
 
-	local, err := rc.ScanLocal(ctx)
+	// status is read-only: it reports instead of refusing on size, and the
+	// classification below wins the case/NFC check.
+	local, err := rc.ScanLocal(ctx, ScanPolicy{})
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +64,11 @@ func Status(ctx context.Context, env Env, offline bool) (*StatusResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	res.Actions, res.Summary = trees.Classify(base, local.Tree, remote)
+	localTree := local.Tree
+	if runtime.GOOS == "windows" {
+		localTree = trees.NormalizeModes(localTree, base, remote)
+	}
+	res.Actions, res.Summary = trees.Classify(base, localTree, remote)
 
 	if res.FetchError != nil {
 		return res, &Error{

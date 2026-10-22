@@ -13,6 +13,8 @@ func cmdPull(ctx context.Context, e *runnerEnv, args []string) error {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	dryRun := fs.Bool("dry-run", false, "print the plan without writing")
+	force := fs.Bool("force", false, "allow files above the warning size")
+	allowLarge := fs.Bool("allow-large", false, "allow files above the hard size limit")
 
 	helped, err := parseFlags(fs, args, e.Stdout, pullUsage)
 	if err != nil {
@@ -25,7 +27,8 @@ func cmdPull(ctx context.Context, e *runnerEnv, args []string) error {
 		return err
 	}
 
-	res, perr := app.Pull(ctx, app.Env{Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr}, *dryRun)
+	res, perr := app.Pull(ctx, app.Env{Cwd: e.Cwd, Stdout: e.Stdout, Stderr: e.Stderr},
+		app.PullOptions{DryRun: *dryRun, Force: *force, AllowLarge: *allowLarge})
 	if res == nil {
 		return Wrap(perr, CodeConflict)
 	}

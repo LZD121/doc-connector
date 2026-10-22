@@ -164,3 +164,41 @@ func randomSuffix() string {
 	}
 	return hex.EncodeToString(b[:])
 }
+
+// writeAtomicAbs writes src into an absolute destination via a sibling temp
+// file. Used by restore --to, where the target is outside the docs root.
+func writeAtomicAbs(target, src string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	f, err := os.CreateTemp(filepath.Dir(target), ".tmp-"+filepath.Base(target)+"-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if _, err := io.Copy(f, in); err != nil {
+		f.Close()
+		return fmt.Errorf("write temporary file %q (kept): %w", tmp, err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("fsync %q (kept): %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %q (kept): %w", tmp, err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		return fmt.Errorf("rename %q -> %q (temporary file kept): %w", tmp, target, err)
+	}
+	return nil
+}

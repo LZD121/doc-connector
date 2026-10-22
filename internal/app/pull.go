@@ -2,14 +2,23 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/LZD121/doc-connector/internal/conflict"
 	"github.com/LZD121/doc-connector/internal/fsx"
 	"github.com/LZD121/doc-connector/internal/state"
 	"github.com/LZD121/doc-connector/internal/trees"
 )
+
+// PullOptions controls one pull.
+type PullOptions struct {
+	DryRun     bool
+	Force      bool
+	AllowLarge bool
+}
 
 // PullResult reports what pull did (or would do).
 type PullResult struct {
@@ -31,7 +40,8 @@ type conflictPlan struct {
 // Pull applies remote additions, modifications and deletions to the docs
 // directory. Conflicts keep the local file, materialize the remote version as
 // <path>.theirs.<machine>, and exit 1 after applying the non-conflicting work.
-func Pull(ctx context.Context, env Env, dryRun bool) (*PullResult, error) {
+func Pull(ctx context.Context, env Env, opts PullOptions) (*PullResult, error) {
+	dryRun := opts.DryRun
 	rc, err := Load(ctx, env, LoadOptions{CreateDocs: true})
 	if err != nil {
 		return nil, err
@@ -54,7 +64,15 @@ func Pull(ctx context.Context, env Env, dryRun bool) (*PullResult, error) {
 			withHint("the remote history may have been rewritten; restore it or re-init explicitly, doc-connector will not delete local docs")
 	}
 
-	local, err := rc.ScanLocal(ctx)
+	maxBytes := rc.Config.Limits.MaxBytes
+	if opts.AllowLarge {
+		maxBytes = 0
+	}
+	local, err := rc.ScanLocal(ctx, ScanPolicy{
+		WarnBytes: rc.Config.Limits.WarnBytes,
+		MaxBytes:  maxBytes,
+		Force:     opts.Force,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +85,11 @@ func Pull(ctx context.Context, env Env, dryRun bool) (*PullResult, error) {
 		return nil, err
 	}
 
-	actions, _ := trees.Classify(base, local.Tree, remote)
+	localTree := local.Tree
+	if runtime.GOOS == "windows" {
+		localTree = trees.NormalizeModes(localTree, base, remote)
+	}
+	actions, _ := trees.Classify(base, localTree, remote)
 	res := &PullResult{Actions: actions, DryRun: dryRun, RemoteTip: tip}
 
 	writes, deletes := planPull(actions)
@@ -115,7 +137,7 @@ func Pull(ctx context.Context, env Env, dryRun bool) (*PullResult, error) {
 		}
 	}
 	for _, a := range writes {
-		if err := checkRemoteSize(ctx, rc, a.Path, a.Remote.OID); err != nil {
+		if err := checkRemoteSize(ctx, rc, a.Path, a.Remote.OID, opts.Force, maxBytes); err != nil {
 			return nil, err
 		}
 	}
@@ -123,7 +145,7 @@ func Pull(ctx context.Context, env Env, dryRun bool) (*PullResult, error) {
 		if p.OID == "" {
 			continue
 		}
-		if err := checkRemoteSize(ctx, rc, p.Path, p.OID); err != nil {
+		if err := checkRemoteSize(ctx, rc, p.Path, p.OID, opts.Force, maxBytes); err != nil {
 			return nil, err
 		}
 	}
@@ -148,14 +170,21 @@ func Pull(ctx context.Context, env Env, dryRun bool) (*PullResult, error) {
 	return res, nil
 }
 
-func checkRemoteSize(ctx context.Context, rc *RepoContext, pathName, oid string) error {
+func checkRemoteSize(ctx context.Context, rc *RepoContext, pathName, oid string, force bool, maxBytes int64) error {
 	size, err := rc.Store.BlobSize(ctx, oid)
 	if err != nil {
 		return wrapErr(err, 1)
 	}
-	if size > rc.Config.Limits.MaxBytes {
-		return errf(1, "remote file %q is %d bytes, above the %d byte limit", pathName, size, rc.Config.Limits.MaxBytes).
+	if maxBytes > 0 && size > maxBytes {
+		return errf(1, "remote file %q is %d bytes, above the %d byte hard limit", pathName, size, maxBytes).
 			withHint("large files must stay outside the synchronized docs directory")
+	}
+	if size > rc.Config.Limits.WarnBytes && !force {
+		return errf(1, "remote file %q is %d bytes, above the %d byte warning limit", pathName, size, rc.Config.Limits.WarnBytes).
+			withHint("re-run with --force to synchronize it anyway")
+	}
+	if size > rc.Config.Limits.WarnBytes {
+		fmt.Fprintf(rc.warnWriter, "warning: %s is %d bytes; --force was used\n", pathName, size)
 	}
 	return nil
 }

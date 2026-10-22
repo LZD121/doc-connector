@@ -64,6 +64,7 @@ remote. Refuses to overwrite any remote version the local side has not seen.
 Flags:
       --dry-run            Print the plan without writing
       --resolve <path>     Accept the local version for an unresolved conflict (repeatable)
+      --force              Allow files above the 50 MiB warning limit
       --allow-large        Allow files above the 100 MiB hard limit
   -h, --help               Show this help
 `
@@ -75,8 +76,10 @@ Applies remote additions, modifications and deletions to the docs directory.
 Conflicts keep the local file and leave a <name>.theirs.<machine> copy.
 
 Flags:
-      --dry-run   Print the plan without writing
-  -h, --help      Show this help
+      --dry-run     Print the plan without writing
+      --force       Allow files above the 50 MiB warning limit
+      --allow-large Allow files above the 100 MiB hard limit
+  -h, --help        Show this help
 `
 
 const logUsage = `Usage:

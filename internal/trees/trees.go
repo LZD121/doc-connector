@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/LZD121/doc-connector/internal/fsx"
 	"github.com/LZD121/doc-connector/internal/gitstore"
 	"github.com/LZD121/doc-connector/internal/state"
 )
@@ -51,7 +52,36 @@ func ReadTree(ctx context.Context, store *gitstore.Store, rev string) (Tree, err
 	if err != nil {
 		return nil, err
 	}
-	return ParseLsTree(out)
+	tree, err := ParseLsTree(out)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(tree))
+	for p := range tree {
+		paths = append(paths, p)
+	}
+	if err := fsx.CheckCaseCollisions(paths); err != nil {
+		return nil, err
+	}
+	return tree, nil
+}
+
+// NormalizeModes returns a copy of local where, for equal OIDs, the mode is
+// taken from base (or remote). It is used on Windows, which cannot express the
+// executable bit, so a chmod difference must not look like a modification.
+func NormalizeModes(local, base, remote Tree) Tree {
+	out := make(Tree, len(local))
+	for p, e := range local {
+		ref, ok := base[p]
+		if !ok {
+			ref, ok = remote[p]
+		}
+		if ok && ref.OID == e.OID && ref.Mode != e.Mode {
+			e.Mode = ref.Mode
+		}
+		out[p] = e
+	}
+	return out
 }
 
 // ParseLsTree parses NUL-terminated `ls-tree -r -z` output.

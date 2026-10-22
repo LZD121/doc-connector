@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ type PushOptions struct {
 	DryRun     bool
 	Resolve    []string
 	AllowLarge bool
+	Force      bool
 }
 
 // PushResult reports what push did.
@@ -78,7 +80,8 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 	if opts.AllowLarge {
 		maxBytes = 0
 	}
-	localRes, err := scanForPush(ctx, rc, !opts.DryRun, maxBytes)
+	warnBytes := rc.Config.Limits.WarnBytes
+	localRes, err := scanForPush(ctx, rc, !opts.DryRun, maxBytes, warnBytes, opts.Force)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +94,10 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 	remote, _, err := rc.RemoteTree(ctx, tip)
 	if err != nil {
 		return nil, err
+	}
+
+	if runtime.GOOS == "windows" {
+		local = trees.NormalizeModes(local, base, remote)
 	}
 
 	if rc.State.SyncedCommit != "" && tip != "" {
@@ -180,7 +187,7 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		if ferr != nil {
 			return nil, ferr
 		}
-		again, serr := scanForPush(ctx, rc, false, maxBytes)
+		again, serr := scanForPush(ctx, rc, false, maxBytes, warnBytes, opts.Force)
 		if serr != nil {
 			return nil, serr
 		}
@@ -221,11 +228,13 @@ func Push(ctx context.Context, env Env, opts PushOptions) (*PushResult, error) {
 		withHint("wait a moment and run push again")
 }
 
-func scanForPush(ctx context.Context, rc *RepoContext, write bool, maxBytes int64) (*scan.Result, error) {
+func scanForPush(ctx context.Context, rc *RepoContext, write bool, maxBytes, warnBytes int64, force bool) (*scan.Result, error) {
 	res, err := scan.Scan(ctx, rc.Store, rc.DocsDir, scan.Options{
-		Write:    write,
-		Filter:   rc.Filter,
-		MaxBytes: maxBytes,
+		Write:     write,
+		Filter:    rc.Filter,
+		MaxBytes:  maxBytes,
+		WarnBytes: warnBytes,
+		Force:     force,
 	})
 	if err != nil {
 		return nil, wrapErr(err, 1)

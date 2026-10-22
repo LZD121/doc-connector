@@ -26,6 +26,10 @@ type Options struct {
 	Filter *ignore.Filter
 	// MaxBytes rejects oversized files; 0 disables the check.
 	MaxBytes int64
+	// WarnBytes requires Force above this size; 0 disables the warning tier.
+	WarnBytes int64
+	// Force allows files above WarnBytes.
+	Force bool
 }
 
 // Result is a scan outcome.
@@ -104,8 +108,15 @@ func Scan(ctx context.Context, store *gitstore.Store, docsDir string, opts Optio
 		if opts.MaxBytes > 0 && info.Size() > opts.MaxBytes {
 			return &Error{
 				Code: 1,
-				Msg:  fmt.Sprintf("file %q is %d bytes, above the %d byte limit", rel, info.Size(), opts.MaxBytes),
-				Hint: "move large files out of the docs directory",
+				Msg:  fmt.Sprintf("file %q is %d bytes, above the %d byte hard limit", rel, info.Size(), opts.MaxBytes),
+				Hint: "move large files out of the docs directory; GitHub rejects blobs this large",
+			}
+		}
+		if opts.WarnBytes > 0 && info.Size() > opts.WarnBytes && !opts.Force {
+			return &Error{
+				Code: 1,
+				Msg:  fmt.Sprintf("file %q is %d bytes, above the %d byte warning limit", rel, info.Size(), opts.WarnBytes),
+				Hint: "re-run with --force to synchronize it anyway",
 			}
 		}
 		res.TotalBytes += info.Size()
@@ -133,5 +144,12 @@ func Scan(ctx context.Context, store *gitstore.Store, docsDir string, opts Optio
 		res.Tree[f.rel] = trees.Entry{Mode: f.mode, OID: strings.TrimSpace(oids[i])}
 	}
 	sort.Strings(res.Skipped)
+	paths := make([]string, 0, len(res.Tree))
+	for p := range res.Tree {
+		paths = append(paths, p)
+	}
+	if err := fsx.CheckCaseCollisions(paths); err != nil {
+		return nil, err
+	}
 	return res, nil
 }
