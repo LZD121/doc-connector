@@ -10,6 +10,18 @@
 
 让私有文档在多台机器间**可验证地**同步，同时保证主仓库的历史与工作区永远不含它们。任何取舍都优先保证“不丢改动”和“不误入主仓库”。
 
+## Current Milestone: v2.0 可观测、本地控制、分发与聚合
+
+**Goal:** 让 v1.0 已经可靠的核心循环变得可脚本化、可自我诊断、可跨仓库驱动，并补齐安装渠道。
+
+**Target features:**
+- 可观测性：`--json` 稳定 schema、`doctor` 诊断、全覆盖可执行 hint
+- 本地控制：`.docignore`、多文档目录映射、可选符号链接、`diff` 历史视图
+- 跨仓库聚合：`status --root` 汇总、`sync --root` 串行批量、`tui` 冲突分诊
+- 分发：Homebrew cask / Scoop / winget 清单、shell completion
+
+Scope lives in `.planning/REQUIREMENTS.md` (12 requirements, phases 6–10).
+
 ## Requirements
 
 ### Validated
@@ -29,7 +41,8 @@ v1.0 shipped 2026-10-22 — all 49 requirements complete. See `.planning/milesto
 
 ### Active
 
-None — v1.0 is complete. v2 themes (OBS/LOCL/DIST) are archived and await `/gsd-new-milestone`.
+Milestone v2.0 — 12 requirements across OBS / LOCL / WORK / DIST. See `.planning/REQUIREMENTS.md` for the committed list and `.planning/ROADMAP.md` for phase mapping.
+
 ### Out of Scope
 
 - **凭据/密钥同步** — 改用密码管理器；本工具不承担 secrets 管理
@@ -37,7 +50,9 @@ None — v1.0 is complete. v2 themes (OBS/LOCL/DIST) are archived and await `/gs
 - **watch / daemon / 定时同步** — 用户选择手动 CLI，避免后台进程的不确定性
 - **自动创建远端仓库** — v1 由用户在 GitHub/Bitbucket 手动建空私有仓库
 - **复用主仓库的隐藏 ref** — 主仓库通常是不可控的团队仓库，不得写入任何对象
-- **移动端 / Web UI** — 纯 CLI
+- **GUI 客户端 / 移动端 / Web UI** — 纯 CLI；若未来出现非 CLI 用户，形态是 `doc-connector serve` 本地 Web UI，而非原生壳
+- **全局 workspace 配置文件** — `--root` 参数即 workspace；不引入 `~/.config` 状态，保持“全部状态在仓库内”
+- **并发推送同一私有远端** — 共享私有仓连续推进分支会撞 lease 重试上限；批量必须串行且每仓重新 fetch
 - **文件级自动文本合并** — 冲突只生成副本，合并由人决定
 - **Git LFS / 大文件分块** — 目标内容是笔记与商务文档，不处理 GB 级数据
 - **跨项目共享单个文档目录** — 每个项目独立前缀，避免所有权模糊
@@ -77,10 +92,15 @@ None — v1.0 is complete. v2 themes (OBS/LOCL/DIST) are archived and await `/gs
 | 裸镜像 `.git/doc-connector/store.git` + plumbing | 文档只有一份，避免第二工作树与工作区漂移；`log`/`restore` 直接读镜像 | — Validated in v1.0 |
 | 手动 CLI（init/push/pull/status/log/restore） | 用户明确不要后台 watch/hook；同步时机完全可控 | — Validated in v1.0 |
 | 内置垃圾文件忽略列表 | 避免 `.DS_Store` 等系统文件污染私有仓库 | — Validated in v1.0 |
+| workspace 只由 `--root <dir>` 参数确定（深度≤2 发现已初始化仓库），不引入全局配置文件 | 保持“工具的全部状态都在仓库内”，避免陈旧条目与仓库搬迁两类故障 | — Decided 2026-10-22 |
+| `sync --root` 逐仓串行、每仓重新 fetch；diverged 或有冲突→`blocked` 跳过；退出码取最坏值 | 共享私有远端连续推进分支会撞 lease 重试上限；批量绝不自动 resolve | — Decided 2026-10-22 |
+| TUI 只做跨仓汇总屏 + 冲突分诊，全部复用 `internal/app`，TUI 层零 git 调用 | 两份 UI 各自调 git 会让 TUI 判定与 `status` 分叉，违反“一个分类器是正确性核心” | — Decided 2026-10-22 |
+| GUI 客户端不做 | 破坏单静态二进制；macOS 未签名导致下载即 Gatekeeper 拦截；需求本质是减少 cd，键盘更合适 | — Decided 2026-10-22 |
+| DIST-03（自动建远端）暂缓到 v2 之后 | 需 provider token、组织策略与可见性决策，`research/FEATURES.md` 列为 anti-feature | — Decided 2026-10-22 |
 
 ## Current State
 
-**v1.0 shipped (2026-10-22).** Working tree contains the Go CLI, unit/CLI tests (86 test functions), CI matrix and GoReleaser config. The binary was exercised end-to-end on Linux against local `file://` bare remotes: init → push → second-machine init → pull → push → pull → clean status, plus conflicts, resolve, restore and offline log. CI matrix and release packaging execute on the next push/tag (see audit tech debt).
+**v2.0 opened (2026-10-22).** v1.0 shipped the same day: 6 static targets, CI matrix green on 3 OS × Go 1.26/1.27, release published with six archives and checksums. The binary was exercised end-to-end on Linux against local `file://` bare remotes (init → push → second-machine init → pull → push → pull → clean status, plus conflicts, resolve, restore and offline log). Not yet exercised against a real provider private repository or a second physical machine — that field validation gates the value of v2's surfaces.
 
 ## Evolution
 
@@ -100,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-22 after v1.0 milestone close*
+*Last updated: 2026-10-22 after milestone v2.0 initialization*

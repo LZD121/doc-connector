@@ -1,12 +1,16 @@
 ---
-gsd_state_version: '1.0'
-status: shipped
+gsd_state_version: "1.0"
+milestone: v2.0
+milestone_name: 可观测、本地控制、分发与聚合
+status: planning
+last_updated: "2026-10-22T15:30:38.117Z"
+last_activity: 2026-10-22
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 23
-  completed_plans: 23
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -16,15 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-10-22)
 
 **Core value:** 让私有文档在多台机器间可验证地同步，同时保证主仓库的历史与工作区永远不含它们。
-**Current focus:** v1.0 shipped — next milestone not started
+**Current focus:** v2.0 — Phase 6 可观测性与诊断
 
 ## Current Position
 
-Phase: — (v1.0 shipped)
-Status: Milestone complete; no active phase
-Last activity: 2026-10-22 — v1.0 CI 全绿，release 已发布（六个平台归档 + 校验和）
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-10-22 — Milestone v2.0 started
 
 ## Performance Metrics
 
@@ -76,18 +79,23 @@ None yet.
 
 ### Blockers/Concerns
 
-None. Remaining debt is recorded in `.planning/milestones/v1.0-MILESTONE-AUDIT.md` (cask upload awaits tap token; race-window coverage).
+None blocking. Two watch items:
+
+- **Field validation gap:** the binary has only been exercised on Linux against local `file://` bare remotes. A real provider private repository plus a second physical machine is the cheapest way to prove the core before v2's surfaces (json/doctor/aggregate/tui) add value on top of it.
+- **Release debt:** cask upload still awaits `HOMEBREW_TAP_GITHUB_TOKEN` (Phase 9 removes the manual step, not the secret); the millisecond push-race window is unit-tested at the lease-classification level only.
 
 ## Deferred Items
 
-Items acknowledged and deferred at milestone close, most recent first:
+Items acknowledged and deferred, most recent first:
 
 | Category | Item | Status | Deferred At | Milestone |
 |----------|------|--------|-------------|-----------|
-| - | v2 需求见 REQUIREMENTS.md（OBS/LOCL/DIST） | Deferred to v2 | 2026-10-22 | v1.0 |
+| DIST | DIST-03 自动创建私有远端仓库（`gh`/`bb`） | Deferred to v2+ | 2026-10-22 | v2.0 |
+| OPS | `store gc`、次级远端复制、`verify`/fsck | Deferred to v2+ | 2026-10-22 | v2.0 |
+| — | v2 需求原清单（OBS/LOCL/DIST） | Promoted into v2.0 scope | 2026-10-22 | v1.0 |
 
 ## Session Continuity
 
 Last session: 2026-10-22
-Stopped at: v1.0 shipped; run /gsd-new-milestone for v2
-Resume file: .planning/MILESTONES.md
+Stopped at: v2.0 initialized — 12 requirements, phases 6–10; next `/gsd-discuss-phase 6`
+Resume file: `.planning/ROADMAP.md`
