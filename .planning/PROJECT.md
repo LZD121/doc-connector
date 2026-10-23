@@ -92,10 +92,12 @@ None — v2.0 is complete. See `.planning/milestones/v2.0-REQUIREMENTS.md` for w
 | TUI 只做跨仓汇总屏 + 冲突分诊，全部复用 `internal/app`，TUI 层零 git 调用 | 两份 UI 各自调 git 会让 TUI 判定与 `status` 分叉，违反“一个分类器是正确性核心” | — Validated in v2.0 |
 | GUI 客户端不做 | 破坏单静态二进制；macOS 未签名导致下载即 Gatekeeper 拦截；需求本质是减少 cd，键盘更合适 | — Held in v2.0 |
 | DIST-03（自动建远端）暂缓到 v2 之后 | 需 provider token、组织策略与可见性决策，`research/FEATURES.md` 列为 anti-feature | — Held in v2.0 |
+| 许可证 = MIT（2026 起，版权人 LZD121） | winget 清单与 GitHub 分发都需要明确的 license 字段；MIT 与本工具“单二进制、可自由复用”的定位一致 | — Decided 2026-10-23 |
+| winget 清单随 `WINGET_GITHUB_TOKEN` 存在而自动开 PR，缺失则只落 `dist/` | 与 cask/Scoop 同一规则：没有凭据的渠道不能让发布变红 | — Decided 2026-10-23 |
 
 ## Current State
 
-**v2.0 shipped (2026-10-23).** 151 tests across 13 packages, `go vet` clean, `golangci-lint` 0 issues, `goreleaser check` valid, snapshot produces six archives plus cask and Scoop manifests. The CLI now has ten subcommands (`init`, `status`, `push`, `pull`, `log`, `restore`, `doctor`, `diff`, `sync`, `tui`, plus `completion`). Still not exercised against a real provider private repository or a second physical machine — that field validation remains the highest-value next step.
+**v2.0 shipped (2026-10-23).** 151 tests across 13 packages, `go vet` clean, `golangci-lint` 0 issues, `goreleaser check` valid, snapshot produces six archives plus cask and Scoop manifests. The CLI now has eleven subcommands (`init`, `status`, `push`, `pull`, `log`, `restore`, `doctor`, `diff`, `sync`, `tui`, `completion`). Still not exercised against a real provider private repository or a second physical machine — that field validation remains the highest-value next step.
 
 ## Evolution
 

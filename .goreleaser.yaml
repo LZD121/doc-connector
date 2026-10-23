@@ -32,6 +32,8 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - LICENSE
 
 checksum:
   name_template: checksums.txt
@@ -61,6 +63,32 @@ homebrew_casks:
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
+
+winget:
+  - name: doc-connector
+    package_identifier: LZD121.doc-connector
+    publisher: LZD121
+    publisher_url: https://github.com/LZD121
+    license: MIT
+    short_description: Sync a private docs directory to your own private git repository
+    description: >-
+      Keeps a project's private documentation in <project_id>/ of your own
+      private git repository while the team repository stays untouched.
+    # Pull requests are only opened when a token for the winget-pkgs fork
+    # exists; otherwise the manifest is generated into dist/ and the release
+    # stays green (same rule as the cask and the Scoop bucket).
+    repository:
+      owner: LZD121
+      name: winget-pkgs
+      branch: "doc-connector-{{ .Version }}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: '{{ if index .Env "WINGET_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
 
 scoops:
   - name: doc-connector
