@@ -92,7 +92,19 @@ func TestDoctorReportsTamperedExclude(t *testing.T) {
 	if !strings.Contains(out, "[fail] exclude") {
 		t.Errorf("doctor did not flag the exclude block: %q", out)
 	}
-	if !strings.Contains(out, exclude) {
+	if !strings.Contains(out, canonical(t, exclude)) {
 		t.Errorf("doctor detail must name the exclude path: %q", out)
 	}
+}
+
+// canonical resolves the aliases a temporary directory may carry: macOS hands
+// out /var paths that git reports as /private/var, Windows hands out 8.3 names
+// that git reports expanded. The report names the file itself, not a spelling.
+func canonical(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", path, err)
+	}
+	return resolved
 }

@@ -170,7 +170,7 @@ func TestLockContention(t *testing.T) {
 	}
 	second.Release()
 
-	if _, err := os.Stat(filepath.Join(Dir(gitDir), "lock")); err != nil {
+	if _, err := os.Stat(LockPath(gitDir)); err != nil {
 		t.Errorf("lock file removed: %v", err)
 	}
 }
@@ -186,22 +186,22 @@ func TestProbe(t *testing.T) {
 	if err := os.MkdirAll(Dir(gitDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lockPath := Path(gitDir, "lock")
-	if err := os.WriteFile(lockPath, []byte("  \n"), 0o600); err != nil {
+	holderPath := HolderPath(gitDir)
+	if err := os.WriteFile(holderPath, []byte("  \n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if h, found, err := Probe(gitDir); found || err != nil {
-		t.Errorf("empty lock = %+v, found=%v, err=%v; want not found", h, found, err)
+		t.Errorf("empty record = %+v, found=%v, err=%v; want not found", h, found, err)
 	}
 
-	if err := os.WriteFile(lockPath, []byte("{not json"), 0o600); err != nil {
+	if err := os.WriteFile(holderPath, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if h, found, err := Probe(gitDir); !found || err == nil || h != (Holder{}) {
-		t.Errorf("malformed lock = %+v, found=%v, err=%v; want the zero Holder, found and an error", h, found, err)
+		t.Errorf("malformed record = %+v, found=%v, err=%v; want the zero Holder, found and an error", h, found, err)
 	}
 
-	if err := os.Remove(lockPath); err != nil {
+	if err := os.Remove(holderPath); err != nil {
 		t.Fatal(err)
 	}
 	held, err := Acquire(ctx, gitDir, "pull", "laptop")
@@ -233,5 +233,36 @@ func TestProbe(t *testing.T) {
 	}
 	if stale, found, err := Probe(gitDir); err != nil || !found || stale.Cmd != "push" {
 		t.Errorf("record after release = %+v, found=%v, err=%v", stale, found, err)
+	}
+}
+
+// TryAcquire is a question, not a claim: a probe must not replace the record of
+// the process that actually wrote last.
+func TestTryAcquireLeavesRecord(t *testing.T) {
+	ctx := context.Background()
+	gitDir := t.TempDir()
+
+	held, err := Acquire(ctx, gitDir, "push", "laptop")
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	// Probing the record while the lock is held is the Windows-sensitive part:
+	// the record must come from a file the flock does not lock.
+	if holder, found, perr := Probe(gitDir); perr != nil || !found || holder.Cmd != "push" {
+		t.Fatalf("probe while held = %+v, found=%v, err=%v", holder, found, perr)
+	}
+	if err := held.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	probe, err := TryAcquire(ctx, gitDir)
+	if err != nil {
+		t.Fatalf("try acquire: %v", err)
+	}
+	if err := probe.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if holder, found, perr := Probe(gitDir); perr != nil || !found || holder.Cmd != "push" || holder.Machine != "laptop" {
+		t.Errorf("record after probe = %+v, found=%v, err=%v; want the push record", holder, found, perr)
 	}
 }

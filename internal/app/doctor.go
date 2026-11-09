@@ -246,11 +246,12 @@ func checkConfig(add func(id, status, detail, hint string), repo *project.Repo, 
 // checkLock reports a lock holder (or a stale lock record). It never takes the
 // lock, so a busy project is described rather than waited for.
 func checkLock(add func(id, status, detail, hint string), repo *project.Repo) {
-	lockPath := state.Path(repo.GitDir, "lock")
+	lockPath := state.LockPath(repo.GitDir)
+	holderPath := state.HolderPath(repo.GitDir)
 	holder, found, err := state.Probe(repo.GitDir)
 	hint := "wait for that process to finish; the kernel releases the lock automatically if it dies"
 	if err != nil {
-		add("lock", CheckWarn, fmt.Sprintf("%s exists but cannot be parsed: %v", lockPath, err),
+		add("lock", CheckWarn, fmt.Sprintf("%s exists but cannot be parsed: %v", holderPath, err),
 			"the record is diagnostic only; delete the file once no doc-connector process is running")
 		return
 	}
@@ -259,12 +260,13 @@ func checkLock(add func(id, status, detail, hint string), repo *project.Repo) {
 		return
 	}
 
-	// The lock file outlives its holder on purpose: it is the diagnostic record
-	// of the last writer. Only an actual flock tells us whether a process is
-	// working right now, so take it for an instant and give it back.
+	// The record outlives its holder on purpose: it names the last writer. Only
+	// an actual flock tells us whether a process is working right now, so take it
+	// for an instant and give it back. TryAcquire writes no record: doctor is a
+	// reader and must not overwrite the last writer's name.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	lock, aerr := state.Acquire(ctx, repo.GitDir, "doctor", "doctor")
+	lock, aerr := state.TryAcquire(ctx, repo.GitDir)
 	if aerr == nil {
 		_ = lock.Release()
 		last := fmt.Sprintf("last writer pid %d", holder.PID)
@@ -277,7 +279,7 @@ func checkLock(add func(id, status, detail, hint string), repo *project.Repo) {
 	if isLockError(aerr) {
 		add("lock", CheckWarn,
 			fmt.Sprintf("pid %d on %s is running %q since %s (record in %s)",
-				holder.PID, holder.Machine, holder.Cmd, holder.StartedAt, lockPath), hint)
+				holder.PID, holder.Machine, holder.Cmd, holder.StartedAt, holderPath), hint)
 		return
 	}
 	add("lock", CheckWarn, fmt.Sprintf("cannot test %s: %v", lockPath, aerr),

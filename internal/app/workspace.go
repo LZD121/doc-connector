@@ -171,7 +171,7 @@ func WorkspaceStatus(ctx context.Context, env Env, root string) (*WorkspaceResul
 			rs.Conflicts = st.Summary.Conflicts
 		}
 		if serr != nil {
-			rs.ErrText = serr.Error()
+			rs.ErrText = displayErrText(serr.Error(), ref.Path)
 			rs.ErrCode = errorExitCode(serr)
 		}
 		rs.Verdict = verdictFor(rs.State, rs.Conflicts, serr)
@@ -181,6 +181,19 @@ func WorkspaceStatus(ctx context.Context, env Env, root string) (*WorkspaceResul
 	res.Summary.Repos = len(refs)
 	res.Summary.Skipped = skipped
 	return res, nil
+}
+
+// displayErrText rewrites the paths git reports for a repository back to the
+// spelling the walk root used. git canonicalizes: macOS turns /var into
+// /private/var, and Windows expands 8.3 names. Without this, one report would
+// name the same directory two ways.
+func displayErrText(msg, repoPath string) string {
+	resolved, err := filepath.EvalSymlinks(repoPath)
+	if err != nil || resolved == repoPath {
+		return msg
+	}
+	msg = strings.ReplaceAll(msg, filepath.ToSlash(resolved), filepath.ToSlash(repoPath))
+	return strings.ReplaceAll(msg, resolved, repoPath)
 }
 
 // count records one verdict. Unknown verdicts are ignored rather than
@@ -402,7 +415,7 @@ func actedSync(rs RepoSync, err error, success, conflictDetail string) RepoSync 
 	case errorExitCode(err) == codeConflict:
 		rs.Verdict = SyncBlocked
 		rs.Detail = conflictDetail
-		rs.ErrText = err.Error()
+		rs.ErrText = displayErrText(err.Error(), rs.Path)
 		rs.ErrCode = codeConflict
 		return rs
 	default:
@@ -412,7 +425,7 @@ func actedSync(rs RepoSync, err error, success, conflictDetail string) RepoSync 
 
 func failedSync(rs RepoSync, err error, verdict string) RepoSync {
 	rs.Verdict = verdict
-	rs.ErrText = err.Error()
+	rs.ErrText = displayErrText(err.Error(), rs.Path)
 	rs.ErrCode = errorExitCode(err)
 	if isLockError(err) {
 		rs.Verdict = SyncLocked

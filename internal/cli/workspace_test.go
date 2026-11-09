@@ -91,6 +91,33 @@ func TestStatusRootAggregates(t *testing.T) {
 	}
 }
 
+// git reports the resolved path of every repository (getcwd resolves symlinks),
+// while the user named the root through a link. One report must not mix the two
+// spellings: this is the macOS /var -> /private/var case, reproducible anywhere.
+func TestStatusRootNamesTheRootAsGiven(t *testing.T) {
+	isolateGit(t)
+	real, _ := threeRepoRoot(t)
+	link := filepath.Join(t.TempDir(), "workspace-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	code, out, _ := run(t, link, "status", "--root", link)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2; out=%q", code, out)
+	}
+	if !strings.Contains(out, "workspace: "+link+" (3 repos, 0 skipped)") {
+		t.Errorf("header does not name the root as given: %q", out)
+	}
+	want := "  parse " + filepath.Join(link, "broken", ".git", "doc-connector")
+	if !strings.Contains(out, want) {
+		t.Errorf("error text does not name %s: %q", want, out)
+	}
+	if strings.Contains(out, filepath.Join(real, "broken")) {
+		t.Errorf("error text mixes in the resolved path %s: %q", real, out)
+	}
+}
+
 func TestStatusRootJSONDocument(t *testing.T) {
 	isolateGit(t)
 	root, ids := threeRepoRoot(t)
